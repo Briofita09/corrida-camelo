@@ -15,7 +15,7 @@ Contexto estável do repositório para agentes de código. A fonte de verdade é
 | Linguagens | TypeScript, CSS |
 | Runtime | Node.js (via Next.js) |
 | Gerenciador de pacotes | npm (`package-lock.json` presente) |
-| Estado do código | Bootstrap `create-next-app`; UI ainda é o template padrão |
+| Estado do código | UI ainda no template `create-next-app`; domínio com `domain/match/` (US-01) e `domain/match-config/` (US-02), ambas validadas |
 
 **Propósito:** digitalizar *Camel Up: The Card Game* para jogar no celular pelo navegador — partidas locais (bots / pass-and-play) no MVP; multiplayer online em evolução futura.
 
@@ -30,10 +30,11 @@ Documento de produto/UX/arquitetura desejada: `docs/game/game-design.md`.
 ### Objetivos (produto + repositório)
 
 - Experiência **Mobile First** e **Touch First** (prioridade: mobile → tablet → desktop).
-- MVP **local-first**: single-player com bots e pass-and-play **sem servidor** / sem internet (assets já disponíveis).
-- Separar **domínio do jogo** da UI (regras não vivem em componentes).
-- Evoluir para multiplayer online **server-authoritative** (lobby, código de sala, WebSocket, reconexão) sem exigir app nativo.
-- Guidelines de front-end em `docs/guidelines/` e skills SDD em `.cursor/skills/`.
+- MVP **local-first**: single-player com bots e pass-and-play **sem servidor**.
+- Separar **domínio do jogo** da UI.
+- Domínio de **partida** (`domain/match`) e de **configuração de nova partida** (`domain/match-config`) já presentes.
+- Evoluir para multiplayer online **server-authoritative** sem app nativo.
+- Guidelines em `docs/guidelines/` e skills SDD em `.cursor/skills/`.
 
 ### Critério principal de produto (MVP)
 
@@ -41,12 +42,14 @@ Documento de produto/UX/arquitetura desejada: `docs/game/game-design.md`.
 
 ### Não-objetivos / ainda não evidenciados no código
 
-- Backend, game server, WebSocket, banco ou ORM implementados.
-- Autenticação / contas / ranking / matchmaking (roadmap fase 6).
-- Player-hosted como transporte inicial (explicitamente adiado; arquitetura não deve impedir no futuro).
-- PWA obrigatória no primeiro MVP (opcional depois).
-- Suíte de testes automatizados configurada (`package.json` sem script `test`; nenhum `*.test.*` / `*.spec.*`).
+- UI de jogo (ainda template Next.js); wiring UI → domínio ainda não feito.
+- Regras de movimento, apostas, baralho, fennec/atalho, IA de bots.
+- Backend, game server, WebSocket, banco ou ORM.
+- Autenticação / contas / ranking / matchmaking.
+- Player-hosted como transporte inicial (adiado).
+- PWA obrigatória no primeiro MVP.
 - CI/CD neste diretório do projeto.
+- Persistência de rascunho de configuração ou de partida em disco.
 - Variáveis de ambiente documentadas (`.env*` no `.gitignore`; sem `.env.example`).
 
 ---
@@ -58,13 +61,15 @@ Documento de produto/UX/arquitetura desejada: `docs/game/game-design.md`.
 | Framework | Next.js (App Router) | `16.3.1` — `package.json` |
 | UI | React / React DOM | `19.2.8` |
 | Linguagem | TypeScript | `^5` — `tsconfig.json` (`strict: true`) |
-| Estilo | Tailwind CSS + `@tailwindcss/postcss` | `^4` — `app/globals.css`, `postcss.config.mjs` |
+| Estilo | Tailwind CSS + `@tailwindcss/postcss` | `^4` |
 | Fontes | `next/font` (Geist / Geist Mono) | `app/layout.tsx` |
 | Lint | ESLint flat config | `eslint.config.mjs`, `eslint-config-next@16.3.1` |
-| Alias de import | `@/*` → raiz do projeto | `tsconfig.json` `paths` |
-| Config Next | `next.config.ts` | Sem opções customizadas além do default |
+| Testes | Vitest | `^3.2.4` — `vitest.config.ts`, scripts `test` / `test:watch` |
+| Alias de import | `@/*` → raiz do projeto | `tsconfig.json` + alias no Vitest |
 
-Não há Prettier, Vitest, Jest, Playwright, Cypress, Storybook, banco, ORM nem SDKs de cloud no manifesto atual.
+Não há Prettier, Jest, Playwright, Cypress, Storybook, banco, ORM nem SDKs de cloud no manifesto atual.
+
+**Nota de ambiente:** Vitest 4 exige Node ≥20.19; o projeto fixou Vitest 3.2.4 para compatibilidade com Node mais antigo.
 
 ---
 
@@ -72,23 +77,31 @@ Não há Prettier, Vitest, Jest, Playwright, Cypress, Storybook, banco, ORM nem 
 
 ### Código atual
 
-Aplicação Next.js monolítica no template inicial:
-
 ```text
 Browser
-  → app/layout.tsx (RootLayout, fontes, metadata)
-  → app/page.tsx (Home do template)
-  → app/globals.css (Tailwind + tokens CSS)
+  → app/layout.tsx / app/page.tsx (template UI)
+  → (ainda sem wiring para o domínio)
+
+Domínio (puro TypeScript, sem React/Next)
+  domain/match/          # partida (US-01)
+  domain/match-config/   # rascunho de configuração → createMatch (US-02)
 ```
 
-Sem `"use client"` no código atual. Sem pastas de domínio/features ainda.
+| Módulo | API pública | Papel |
+| --- | --- | --- |
+| `@/domain/match` | `createMatch`, `startMatch`, `validateMatchState`, serialize/deserialize | Estado da partida |
+| `@/domain/match-config` | `createMatchConfig`, `setMatchMode`, participantes, `validateMatchConfig`, `createMatchFromConfig`, `discardMatchConfig` | Configuração pré-partida |
+
+Comandos de domínio retornam `DomainResult` (`ok` / `erro`). Estado tratado como dados imutáveis nos comandos (novos objetos no sucesso).
+
+`match-config` depende de `match` apenas para gerar a partida (`createMatch`) e reutilizar limites / `BotDifficulty` / `result`.
 
 ### Arquitetura desejada (produto)
 
 Fonte: `docs/game/game-design.md` §§41–43, 59–60, 64.
 
 ```text
-GAME DOMAIN
+GAME DOMAIN          ← domain/match + domain/match-config
      │
 APPLICATION ←→ BOT ENGINE
      │
@@ -105,31 +118,47 @@ UI → Command → Domain → GameState → UI
 
 | Princípio | Implicação |
 | --- | --- |
-| Domain-driven | UI não decide regras (ex.: vitória); domínio é autoridade das regras |
-| Local-first (MVP) | Partidas locais no cliente; custo de infra ≈ zero |
-| Server-authoritative (online futuro) | Cliente não é autoridade; recebe só o estado autorizado ao jogador |
-| Client Components | Só para interação; lógica de jogo fora da árvore de UI |
-| Transports plugáveis | Evitar acoplamento que impeça Local / Server / Hosted depois |
+| Domain-driven | UI não decide regras; domínio é autoridade |
+| Local-first (MVP) | Partidas locais no cliente |
+| Server-authoritative (online futuro) | Cliente não é autoridade |
+| Client Components | Só para interação; lógica fora da árvore de UI |
+| Transports plugáveis | Não acoplar de forma que impeça Local / Server / Hosted |
 
-### Decisão arquitetural resumida
+### Domínio de partida (US-01)
 
-```text
-Next.js + Mobile First + Touch First + Domain Driven + TDD/BDD
-+ Local-first (MVP) + Server-authoritative (multiplayer futuro)
-```
+| Conceito | Situação no código |
+| --- | --- |
+| Jogadores | 2–6; ≥1 humano; bots com `Easy` \| `Medium` \| `Hard` |
+| Camelos | 6 (`Yellow`…`Red` + `Crazy`); posição = espaço + `stackOrder` |
+| Fases | `Created` … `Finished` |
+| Dinheiro | £ por jogador; criação com 3; válido ≥ 1 |
+| Início | `Created` → `RaceSetup` via `startMatch` |
+| Encerrada | Mutações rejeitadas em `Finished` |
+| Serialização | JSON round-trip |
+
+### Domínio de configuração (US-02)
+
+| Conceito | Situação no código |
+| --- | --- |
+| Modos | `SinglePlayerVsBots` \| `PassAndPlay` (Online fora de escopo) |
+| Fluxo | Modo **antes** dos jogadores; redefinir modo limpa participantes |
+| Single-player | Exatamente 1 humano + ≥1 bot; total 2–6 |
+| Pass-and-play | ≥2 humanos; bots opcionais; total 2–6 |
+| Nomes | Sem vazio; sem duplicata (trim + case-insensitive) |
+| Geração | `createMatchFromConfig` → partida `Created` |
+| Abandono | `discardMatchConfig`; sem persistência de rascunho |
+| Dificuldade | Definida na config; preservada na partida; sem API de alteração pós-generate |
+
+Detalhes: `docs/spec/us-01-dominio-estado-partida/` e `docs/spec/us-02-configuracao-nova-partida/` (+ plan/tasks/implementation/validation).
 
 ### Roadmap (alto nível)
 
-| Fase | Foco |
-| --- | --- |
-| 1 | Domínio + regras + BDD/TDD |
-| 2 | MVP mobile: UI, single-player, bots, pass-and-play |
-| 3 | Persistência local (salvar / continuar / offline) |
-| 4 | Multiplayer (server, lobby, room code, WebSocket) |
-| 5 | Online UX (reconnect, persistência, PWA, share) |
-| 6 | Contas, matchmaking, ranking, replay, player-hosted opcional |
-
-Detalhes de UX mobile, HUD, pista, apostas, etc.: `docs/game/game-design.md` — **não** duplicar aqui.
+| Fase | Foco | Situação |
+| --- | --- | --- |
+| 1 | Domínio + regras + BDD/TDD | Partida + configuração (US-01, US-02); regras de jogo ainda pendentes |
+| 2 | MVP mobile UI + bots + pass-and-play | Não iniciado (UI) |
+| 3 | Persistência local | Não iniciado |
+| 4–6 | Multiplayer, PWA, contas, etc. | Não iniciado |
 
 ---
 
@@ -137,28 +166,33 @@ Detalhes de UX mobile, HUD, pista, apostas, etc.: `docs/game/game-design.md` —
 
 ```text
 camel-up-card-game/
-├── app/
-│   ├── layout.tsx
-│   ├── page.tsx
-│   └── globals.css
-├── public/                 # Assets do template
+├── app/                         # Next.js App Router (template UI)
+├── domain/
+│   ├── match/                   # Domínio da partida (US-01)
+│   └── match-config/            # Configuração de nova partida (US-02)
+├── public/
 ├── docs/
-│   ├── game/
-│   │   └── game-design.md  # Especificação Mobile First + arquitetura desejada
-│   └── guidelines/         # Convenções front-end (01–08)
-├── .cursor/skills/         # Skills SDD + create-architecture
+│   ├── game/game-design.md
+│   ├── guidelines/              # 01–08
+│   ├── spec/
+│   │   ├── us-01-dominio-estado-partida/
+│   │   └── us-02-configuracao-nova-partida/
+│   ├── plan/…                   # us-01, us-02
+│   ├── tasks/…
+│   ├── implementation/…
+│   └── validation/…
+├── .cursor/skills/
+├── vitest.config.ts
 ├── package.json
-├── package-lock.json
 ├── tsconfig.json
 ├── next.config.ts
-├── postcss.config.mjs
 ├── eslint.config.mjs
 ├── README.md
 ├── CLAUDE.md
 └── AGENTS.md
 ```
 
-Quando o código crescer: organização por **feature/domínio** e colocation — `docs/guidelines/06-code-structure.md`.
+Organização futura de UI/features: por domínio, com colocation — `docs/guidelines/06-code-structure.md`.
 
 ---
 
@@ -168,38 +202,35 @@ Quando o código crescer: organização por **feature/domínio** e colocation �
 
 | Tema | Regra |
 | --- | --- |
-| Dispositivo | Smartphone portrait; referência mínima ~320×568; touch ≥ ~44×44 px |
-| Interação | Sem depender de hover, mouse, teclado, drag obrigatório ou tela grande para ações essenciais |
-| Breakpoints (referência) | Mobile `<640px`, tablet `640–1024px`, desktop `>1024px` (ajustáveis) |
-| Privacidade | Pass-and-play: tela de passagem esconde estado privado; online: cliente só vê o autorizado |
-| Acessibilidade | Cor não é a única identificação dos camelos; contraste, toque, leitores de tela |
-| Assets | Emoji ok no protótipo; produção com SVG/Canvas/assets próprios |
-| Safe areas | Respeitar `safe-area-inset` em elementos fixos |
+| Dispositivo | Smartphone portrait; ~320×568; touch ≥ ~44×44 px |
+| Interação | Sem hover/mouse/teclado/drag obrigatório para ações essenciais |
+| Breakpoints (referência) | Mobile `<640px`, tablet `640–1024px`, desktop `>1024px` |
+| Privacidade | Pass-and-play e online: estado privado não vaza |
+| Acessibilidade | Camelos não só por cor; contraste; teclado no desktop |
+| Assets | Emoji no protótipo; produção com assets próprios |
 
 ### Front-end (guidelines)
 
-| Tema | Arquivo | Regras-chave |
-| --- | --- | --- |
-| Componentes | `01-component-design.md` | Responsabilidade única; composição; apresentação vs lógica |
-| Rendering | `02-rendering-strategy.md` | Server por padrão; `"use client"` só com justificativa |
-| Estado | `03-state-management.md` | Local → lift → contexto → store; classificar server/UI/URL/form |
-| Data fetching | `04-data-fetching.md` | Colocation; loading/error/empty; evitar waterfalls |
-| Performance | `05-performance.md` | Medir antes de memoizar; lazy fora do critical path |
-| Estrutura | `06-code-structure.md` | Por feature; sem import direto entre features |
-| Acessibilidade | `07-accessibility.md` | Semântica, teclado (desktop), labels, foco |
-| Testes | `08-testing.md` | Comportamento > implementação; pirâmide unit/integração/e2e |
+Consultar `docs/guidelines/01`–`08`.
+
+### Domínio
+
+- Código em `domain/**` **sem** imports de `react` ou `next`.
+- Preferir `DomainResult` para rejeições explícitas.
+- Testes unitários colocalizados (`*.test.ts`) com Vitest, ambiente `node`.
+- Regras de **modo de partida** em `match-config`; regras/estado de **partida** em `match` — não misturar.
 
 ### TypeScript / Next
 
 - `strict: true`.
-- Preferir Server Components; Client Components para interação de jogo/UI.
+- Server Components por padrão; `"use client"` só com justificativa.
 - Path alias `@/*`.
 
 ### Fluxo SDD (alto nível)
 
-Skills em `.cursor/skills/`: specification → plan → tasks → implementation → validation. Detalhe do processo SDD **não** vive neste arquivo. Este `AGENTS.md` é pré-requisito de contexto para essas skills.
+Skills: specification → plan → tasks → implementation → validation. Detalhe do processo **não** vive neste arquivo. Artefatos em `docs/{spec,plan,tasks,implementation,validation}/<feature>/`.
 
-O `game-design.md` orienta produto/UX/arquitetura desejada; specs de feature (`spec.md`) detalham fatias implementáveis — não confundir os dois.
+`game-design.md` = produto/UX/arquitetura desejada; `spec.md` = fatia implementável.
 
 ---
 
@@ -207,9 +238,11 @@ O `game-design.md` orienta produto/UX/arquitetura desejada; specs de feature (`s
 
 | Aspecto | Situação |
 | --- | --- |
-| Código | Sem runner/scripts de teste ainda |
-| Intenção de produto | Domain com TDD; comportamento com BDD; UI conforme `08-testing.md` |
-| Aceite mobile | Checklist em `game-design.md` §62 (partida completa no smartphone, touch, privacidade pass-and-play, offline local, etc.) |
+| Runner | Vitest 3.2.4 (`vitest.config.ts`, env `node`) |
+| Scripts | `npm test` (`vitest run`), `npm run test:watch` |
+| Domínio | `domain/match/*.test.ts` + `domain/match-config/*.test.ts` (suíte validada: **45** testes) |
+| UI / E2E | Ainda não configurados |
+| Diretriz | Guideline `08-testing.md`; domínio com TDD |
 
 ---
 
@@ -218,7 +251,7 @@ O `game-design.md` orienta produto/UX/arquitetura desejada; specs de feature (`s
 - `.env*` no `.gitignore`; **nunca** copiar segredos para `AGENTS.md` ou commits.
 - Nenhuma variável de ambiente em uso no código atual.
 - Online futuro: cartas/estado privado nunca no estado público da UI.
-- Metadata/`lang` ainda do template (`lang="en"`, título "Create Next App").
+- Metadata/`lang` ainda do template.
 
 ---
 
@@ -226,7 +259,7 @@ O `game-design.md` orienta produto/UX/arquitetura desejada; specs de feature (`s
 
 - MVP local: infra ≈ zero (cliente).
 - Multiplayer futuro: frontend + game server + database (não implementado).
-- README menciona Vercel; sem `vercel.json`, Dockerfile ou pipeline CI neste projeto.
+- README menciona Vercel; sem `vercel.json`, Dockerfile ou CI neste projeto.
 - Sem instalação nativa obrigatória; PWA opcional depois.
 
 ---
@@ -239,21 +272,22 @@ npm run dev          # next dev
 npm run build        # next build
 npm run start        # next start
 npm run lint         # eslint
+npm test             # vitest run
+npm run test:watch   # vitest (watch)
 ```
-
-Não há scripts `test`, `format` ou `typecheck` dedicados.
 
 ---
 
 ## Instruções para agentes de código
 
-1. Código + este arquivo + `docs/` são a fonte de verdade; não inventar stack, pastas ou serviços inexistentes.
-2. Antes de features de produto: ler trechos relevantes de `docs/game/game-design.md` e `docs/guidelines/`; usar fluxo SDD quando a tarefa for de produto.
-3. Implementar domínio de jogo **fora** de componentes React; UI só renderiza e despacha comandos.
-4. Projetar UI Mobile First / Touch First; desktop é adaptação, não fonte de regras extras.
-5. MVP local-first: não exigir servidor para bots/pass-and-play.
-6. Preferir Server Components; `"use client"` só com motivo concreto.
-7. Organizar código novo por feature/domínio com colocation.
-8. Não adicionar auth, banco, WebSocket ou CI “por padrão” sem spec/plan.
-9. Não criar artefatos SDD a partir desta skill de contexto — use as skills correspondentes.
-10. Idioma de artefatos de processo: **pt-BR**; identificadores técnicos conforme o código.
+1. Código + este arquivo + `docs/` são a fonte de verdade; não inventar stack ou serviços inexistentes.
+2. Domínio em `domain/**`, fora de React; UI só renderiza e despacha comandos.
+3. Configuração de nova partida → `domain/match-config`; estado/regras de partida → `domain/match`.
+4. Antes de features de produto: `docs/game/game-design.md`, guidelines e fluxo SDD quando aplicável.
+5. Mobile First / Touch First; desktop é adaptação.
+6. MVP local-first: não exigir servidor para bots/pass-and-play.
+7. Preferir Server Components; `"use client"` só com motivo concreto.
+8. Rodar `npm test` (e lint/build quando relevante) ao alterar domínio.
+9. Não adicionar auth, banco, WebSocket, persistência de rascunho ou CI sem spec/plan.
+10. Não criar artefatos SDD a partir desta skill — use as skills correspondentes.
+11. Idioma de artefatos de processo: **pt-BR**; identificadores técnicos conforme o código.

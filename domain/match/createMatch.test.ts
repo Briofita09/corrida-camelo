@@ -113,5 +113,6 @@ describe("createMatch — caminho feliz", () => {
 
     expect(state.currentTurnPlayerId).toBeNull();
     expect(state.currentLeg).toBe(0);
+    expect(state.playerRoundIndex).toBe(0);
   });
 });

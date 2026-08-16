@@ -6,6 +6,10 @@ import {
 } from "./constants";
 import { err, ok } from "./result";
 import {
+  createRandomOrdering,
+  type CreateMatchOptions,
+} from "./playerOrdering";
+import {
   BOT_DIFFICULTIES,
   CAMEL_IDS,
   type BotDifficulty,
@@ -109,18 +113,24 @@ function initialCamels(): CamelState[] {
 
 export function createMatch(
   config: CreateMatchConfig,
+  options?: CreateMatchOptions,
 ): DomainResult<MatchState> {
   const validation = validateCreateConfig(config);
   if (!validation.ok) {
     return validation;
   }
 
+  const random = options?.random ?? Math.random;
+  const ordering = options?.ordering ?? createRandomOrdering();
+  const orderedInputs = ordering.order(config.players, random);
+
   return ok({
     id: config.id,
     phase: "Created",
-    players: toPlayers(config.players),
+    players: toPlayers(orderedInputs),
     camels: initialCamels(),
     currentTurnPlayerId: null,
     currentLeg: 0,
+    playerRoundIndex: 0,
   });
 }

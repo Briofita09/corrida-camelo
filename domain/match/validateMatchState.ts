@@ -250,6 +250,21 @@ export function validateMatchState(input: unknown): DomainResult<MatchState> {
     );
   }
 
+  let playerRoundIndex = 0;
+  if (raw.playerRoundIndex !== undefined) {
+    if (
+      typeof raw.playerRoundIndex !== "number" ||
+      !Number.isInteger(raw.playerRoundIndex) ||
+      raw.playerRoundIndex < 0
+    ) {
+      return err(
+        "INVALID_PLAYER_ROUND_INDEX",
+        "playerRoundIndex deve ser um inteiro >= 0.",
+      );
+    }
+    playerRoundIndex = raw.playerRoundIndex;
+  }
+
   return ok({
     id: raw.id,
     phase: raw.phase,
@@ -257,5 +272,6 @@ export function validateMatchState(input: unknown): DomainResult<MatchState> {
     camels: camelsResult.value,
     currentTurnPlayerId: raw.currentTurnPlayerId as string | null,
     currentLeg: raw.currentLeg,
+    playerRoundIndex,
   });
 }
