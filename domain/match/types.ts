@@ -56,6 +56,8 @@ export type MatchState = {
   camels: CamelState[];
   currentTurnPlayerId: string | null;
   currentLeg: number;
+  /** Índice da rodada de jogadores (deslocamento sobre a ordem base em `players`). */
+  playerRoundIndex: number;
 };
 
 export type CreateMatchPlayerInput =

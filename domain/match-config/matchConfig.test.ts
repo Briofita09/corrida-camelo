@@ -300,6 +300,24 @@ describe("createMatchFromConfig", () => {
     if (easy?.type !== "Bot") throw new Error("expected bot");
     expect(easy.difficulty).toBe("Easy");
   });
+
+  it("generate produz permutação completa dos participantes sem duplicata", () => {
+    let config = withMode("PassAndPlay");
+    for (const name of ["Ana", "Bia", "Caio", "Duda"]) {
+      const added = addParticipant(config, { name, type: "Human" });
+      if (!added.ok) throw new Error(name);
+      config = added.value;
+    }
+    const match = createMatchFromConfig(config, "m-order", {
+      random: () => 0,
+    });
+    expect(match.ok).toBe(true);
+    if (!match.ok) return;
+    const names = match.value.players.map((p) => p.name);
+    expect(names).toHaveLength(4);
+    expect(new Set(names).size).toBe(4);
+    expect([...names].sort()).toEqual(["Ana", "Bia", "Caio", "Duda"].sort());
+  });
 });
 
 describe("discardMatchConfig", () => {

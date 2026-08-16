@@ -1,9 +1,18 @@
+export { advancePlayerRound } from "./advancePlayerRound";
 export { createMatch } from "./createMatch";
-export { startMatch } from "./startMatch";
+export { getRoundPlayerSequence } from "./getRoundPlayerSequence";
+export {
+  createRandomOrdering,
+  identityOrdering,
+  type CreateMatchOptions,
+  type PlayerOrderingStrategy,
+  type RandomFn,
+} from "./playerOrdering";
 export {
   deserializeMatchState,
   serializeMatchState,
 } from "./serialize";
+export { startMatch } from "./startMatch";
 export { validateMatchState } from "./validateMatchState";
 export {
   BOT_DIFFICULTIES,

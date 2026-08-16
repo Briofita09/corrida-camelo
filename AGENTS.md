@@ -15,7 +15,7 @@ Contexto estável do repositório para agentes de código. A fonte de verdade é
 | Linguagens | TypeScript, CSS |
 | Runtime | Node.js (via Next.js) |
 | Gerenciador de pacotes | npm (`package-lock.json` presente) |
-| Estado do código | UI ainda no template `create-next-app`; domínio de partida iniciado em `domain/match/` (US-01 validada) |
+| Estado do código | UI ainda no template `create-next-app`; domínio com `domain/match/` (US-01) e `domain/match-config/` (US-02), ambas validadas |
 
 **Propósito:** digitalizar *Camel Up: The Card Game* para jogar no celular pelo navegador — partidas locais (bots / pass-and-play) no MVP; multiplayer online em evolução futura.
 
@@ -30,10 +30,10 @@ Documento de produto/UX/arquitetura desejada: `docs/game/game-design.md`.
 ### Objetivos (produto + repositório)
 
 - Experiência **Mobile First** e **Touch First** (prioridade: mobile → tablet → desktop).
-- MVP **local-first**: single-player com bots e pass-and-play **sem servidor** / sem internet (assets já disponíveis).
-- Separar **domínio do jogo** da UI (regras não vivem em componentes).
-- Domínio de partida serializável (criação, início, validação, fases) já presente em `domain/match/`.
-- Evoluir para multiplayer online **server-authoritative** sem exigir app nativo.
+- MVP **local-first**: single-player com bots e pass-and-play **sem servidor**.
+- Separar **domínio do jogo** da UI.
+- Domínio de **partida** (`domain/match`) e de **configuração de nova partida** (`domain/match-config`) já presentes.
+- Evoluir para multiplayer online **server-authoritative** sem app nativo.
 - Guidelines em `docs/guidelines/` e skills SDD em `.cursor/skills/`.
 
 ### Critério principal de produto (MVP)
@@ -42,13 +42,14 @@ Documento de produto/UX/arquitetura desejada: `docs/game/game-design.md`.
 
 ### Não-objetivos / ainda não evidenciados no código
 
-- UI de jogo (ainda template Next.js).
+- UI de jogo (ainda template Next.js); wiring UI → domínio ainda não feito.
 - Regras de movimento, apostas, baralho, fennec/atalho, IA de bots.
 - Backend, game server, WebSocket, banco ou ORM.
 - Autenticação / contas / ranking / matchmaking.
-- Player-hosted como transporte inicial (adiado; não impedir no futuro).
+- Player-hosted como transporte inicial (adiado).
 - PWA obrigatória no primeiro MVP.
 - CI/CD neste diretório do projeto.
+- Persistência de rascunho de configuração ou de partida em disco.
 - Variáveis de ambiente documentadas (`.env*` no `.gitignore`; sem `.env.example`).
 
 ---
@@ -79,25 +80,28 @@ Não há Prettier, Jest, Playwright, Cypress, Storybook, banco, ORM nem SDKs de 
 ```text
 Browser
   → app/layout.tsx / app/page.tsx (template UI)
-  → (ainda sem wiring)
+  → (ainda sem wiring para o domínio)
 
 Domínio (puro TypeScript, sem React/Next)
-  domain/match/
-    createMatch | startMatch | validateMatchState
-    serializeMatchState | deserializeMatchState
-    tipos (MatchState, fases, jogadores, camelos)
+  domain/match/          # partida (US-01)
+  domain/match-config/   # rascunho de configuração → createMatch (US-02)
 ```
 
-API pública do domínio: `@/domain/match` (`index.ts`).
+| Módulo | API pública | Papel |
+| --- | --- | --- |
+| `@/domain/match` | `createMatch`, `startMatch`, `validateMatchState`, serialize/deserialize | Estado da partida |
+| `@/domain/match-config` | `createMatchConfig`, `setMatchMode`, participantes, `validateMatchConfig`, `createMatchFromConfig`, `discardMatchConfig` | Configuração pré-partida |
 
 Comandos de domínio retornam `DomainResult` (`ok` / `erro`). Estado tratado como dados imutáveis nos comandos (novos objetos no sucesso).
+
+`match-config` depende de `match` apenas para gerar a partida (`createMatch`) e reutilizar limites / `BotDifficulty` / `result`.
 
 ### Arquitetura desejada (produto)
 
 Fonte: `docs/game/game-design.md` §§41–43, 59–60, 64.
 
 ```text
-GAME DOMAIN          ← domain/match/ (em construção)
+GAME DOMAIN          ← domain/match + domain/match-config
      │
 APPLICATION ←→ BOT ENGINE
      │
@@ -120,26 +124,39 @@ UI → Command → Domain → GameState → UI
 | Client Components | Só para interação; lógica fora da árvore de UI |
 | Transports plugáveis | Não acoplar de forma que impeça Local / Server / Hosted |
 
-### Domínio de partida (evidência US-01)
+### Domínio de partida (US-01)
 
 | Conceito | Situação no código |
 | --- | --- |
 | Jogadores | 2–6; ≥1 humano; bots com `Easy` \| `Medium` \| `Hard` |
 | Camelos | 6 (`Yellow`…`Red` + `Crazy`); posição = espaço + `stackOrder` |
-| Fases | `Created`, `RaceSetup`, `LegSetup`, `LegInProgress`, `LegPayout`, `FinalPayout`, `Finished` |
+| Fases | `Created` … `Finished` |
 | Dinheiro | £ por jogador; criação com 3; válido ≥ 1 |
 | Início | `Created` → `RaceSetup` via `startMatch` |
 | Encerrada | Mutações rejeitadas em `Finished` |
-| Persistência futura | Estado JSON-serializável |
+| Serialização | JSON round-trip |
 
-Detalhe de regras/aceitação: `docs/spec/us-01-dominio-estado-partida/` (e plan/tasks/implementation/validation).
+### Domínio de configuração (US-02)
+
+| Conceito | Situação no código |
+| --- | --- |
+| Modos | `SinglePlayerVsBots` \| `PassAndPlay` (Online fora de escopo) |
+| Fluxo | Modo **antes** dos jogadores; redefinir modo limpa participantes |
+| Single-player | Exatamente 1 humano + ≥1 bot; total 2–6 |
+| Pass-and-play | ≥2 humanos; bots opcionais; total 2–6 |
+| Nomes | Sem vazio; sem duplicata (trim + case-insensitive) |
+| Geração | `createMatchFromConfig` → partida `Created` |
+| Abandono | `discardMatchConfig`; sem persistência de rascunho |
+| Dificuldade | Definida na config; preservada na partida; sem API de alteração pós-generate |
+
+Detalhes: `docs/spec/us-01-dominio-estado-partida/` e `docs/spec/us-02-configuracao-nova-partida/` (+ plan/tasks/implementation/validation).
 
 ### Roadmap (alto nível)
 
 | Fase | Foco | Situação |
 | --- | --- | --- |
-| 1 | Domínio + regras + BDD/TDD | Estado da partida iniciado (US-01); regras de jogo ainda pendentes |
-| 2 | MVP mobile UI + bots + pass-and-play | Não iniciado |
+| 1 | Domínio + regras + BDD/TDD | Partida + configuração (US-01, US-02); regras de jogo ainda pendentes |
+| 2 | MVP mobile UI + bots + pass-and-play | Não iniciado (UI) |
 | 3 | Persistência local | Não iniciado |
 | 4–6 | Multiplayer, PWA, contas, etc. | Não iniciado |
 
@@ -151,17 +168,20 @@ Detalhe de regras/aceitação: `docs/spec/us-01-dominio-estado-partida/` (e plan
 camel-up-card-game/
 ├── app/                         # Next.js App Router (template UI)
 ├── domain/
-│   └── match/                   # Domínio da partida (+ *.test.ts colocalizados)
+│   ├── match/                   # Domínio da partida (US-01)
+│   └── match-config/            # Configuração de nova partida (US-02)
 ├── public/
 ├── docs/
 │   ├── game/game-design.md
 │   ├── guidelines/              # 01–08
-│   ├── spec/us-01-dominio-estado-partida/
-│   ├── plan/us-01-dominio-estado-partida/
-│   ├── tasks/us-01-dominio-estado-partida/
-│   ├── implementation/us-01-dominio-estado-partida/
-│   └── validation/us-01-dominio-estado-partida/
-├── .cursor/skills/              # SDD + create-architecture
+│   ├── spec/
+│   │   ├── us-01-dominio-estado-partida/
+│   │   └── us-02-configuracao-nova-partida/
+│   ├── plan/…                   # us-01, us-02
+│   ├── tasks/…
+│   ├── implementation/…
+│   └── validation/…
+├── .cursor/skills/
 ├── vitest.config.ts
 ├── package.json
 ├── tsconfig.json
@@ -191,13 +211,14 @@ Organização futura de UI/features: por domínio, com colocation — `docs/guid
 
 ### Front-end (guidelines)
 
-Consultar `docs/guidelines/01`–`08` (componentes, RSC, estado, fetch, performance, estrutura, a11y, testes).
+Consultar `docs/guidelines/01`–`08`.
 
 ### Domínio
 
 - Código em `domain/**` **sem** imports de `react` ou `next`.
 - Preferir `DomainResult` para rejeições explícitas.
 - Testes unitários colocalizados (`*.test.ts`) com Vitest, ambiente `node`.
+- Regras de **modo de partida** em `match-config`; regras/estado de **partida** em `match` — não misturar.
 
 ### TypeScript / Next
 
@@ -207,7 +228,7 @@ Consultar `docs/guidelines/01`–`08` (componentes, RSC, estado, fetch, performa
 
 ### Fluxo SDD (alto nível)
 
-Skills: specification → plan → tasks → implementation → validation. Detalhe do processo **não** vive neste arquivo. Artefatos por feature em `docs/{spec,plan,tasks,implementation,validation}/<feature>/`.
+Skills: specification → plan → tasks → implementation → validation. Detalhe do processo **não** vive neste arquivo. Artefatos em `docs/{spec,plan,tasks,implementation,validation}/<feature>/`.
 
 `game-design.md` = produto/UX/arquitetura desejada; `spec.md` = fatia implementável.
 
@@ -219,9 +240,9 @@ Skills: specification → plan → tasks → implementation → validation. Deta
 | --- | --- |
 | Runner | Vitest 3.2.4 (`vitest.config.ts`, env `node`) |
 | Scripts | `npm test` (`vitest run`), `npm run test:watch` |
-| Domínio | Testes em `domain/match/*.test.ts` (US-01 validada: 22 testes) |
+| Domínio | `domain/match/*.test.ts` + `domain/match-config/*.test.ts` (suíte validada: **45** testes) |
 | UI / E2E | Ainda não configurados |
-| Diretriz | Guideline `08-testing.md`; domínio com TDD; UI quando existir |
+| Diretriz | Guideline `08-testing.md`; domínio com TDD |
 
 ---
 
@@ -260,13 +281,13 @@ npm run test:watch   # vitest (watch)
 ## Instruções para agentes de código
 
 1. Código + este arquivo + `docs/` são a fonte de verdade; não inventar stack ou serviços inexistentes.
-2. Domínio de jogo em `domain/**`, fora de React; UI só renderiza e despacha comandos.
-3. Estender `domain/match` (ou novos módulos de domínio) sem acoplar a Next; manter serialização/invariantes.
+2. Domínio em `domain/**`, fora de React; UI só renderiza e despacha comandos.
+3. Configuração de nova partida → `domain/match-config`; estado/regras de partida → `domain/match`.
 4. Antes de features de produto: `docs/game/game-design.md`, guidelines e fluxo SDD quando aplicável.
 5. Mobile First / Touch First; desktop é adaptação.
 6. MVP local-first: não exigir servidor para bots/pass-and-play.
 7. Preferir Server Components; `"use client"` só com motivo concreto.
 8. Rodar `npm test` (e lint/build quando relevante) ao alterar domínio.
-9. Não adicionar auth, banco, WebSocket ou CI sem spec/plan.
+9. Não adicionar auth, banco, WebSocket, persistência de rascunho ou CI sem spec/plan.
 10. Não criar artefatos SDD a partir desta skill — use as skills correspondentes.
 11. Idioma de artefatos de processo: **pt-BR**; identificadores técnicos conforme o código.
