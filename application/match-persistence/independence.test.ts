@@ -14,6 +14,7 @@ describe("match-persistence independence", () => {
       "matchPersistence.ts",
       "persistCreatedMatch.ts",
       "startAndPersistMatch.ts",
+      "performTurnActionAndPersist.ts",
       "index.ts",
     ];
     for (const file of files) {
