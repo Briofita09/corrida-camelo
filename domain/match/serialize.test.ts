@@ -41,6 +41,20 @@ describe("serialize / deserialize", () => {
     expect(deserialized.ok).toBe(true);
     if (!deserialized.ok) return;
     expect(deserialized.value).toEqual(started.value);
+    expect(deserialized.value.phase).toBe("RaceSetup");
+    expect(deserialized.value.currentTurnPlayerId).toBe(
+      started.value.currentTurnPlayerId,
+    );
+  });
+
+  it("rejeita desserializar RaceSetup sem turno", () => {
+    const created = buildValidCreatedMatch();
+    const payload = JSON.stringify({
+      ...created,
+      phase: "RaceSetup",
+      currentTurnPlayerId: null,
+    });
+    expect(deserializeMatchState(payload).ok).toBe(false);
   });
 
   it("faz round-trip de Finished", () => {

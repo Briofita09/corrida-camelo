@@ -13,6 +13,8 @@ describe("match-persistence independence", () => {
       "localStorageAdapter.ts",
       "matchPersistence.ts",
       "persistCreatedMatch.ts",
+      "startAndPersistMatch.ts",
+      "performTurnActionAndPersist.ts",
       "index.ts",
     ];
     for (const file of files) {

@@ -11,3 +11,5 @@ export {
   type MatchPersistence,
 } from "./matchPersistence";
 export { persistCreatedMatch } from "./persistCreatedMatch";
+export { performTurnActionAndPersist } from "./performTurnActionAndPersist";
+export { startAndPersistMatch } from "./startAndPersistMatch";

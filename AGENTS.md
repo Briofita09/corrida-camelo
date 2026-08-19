@@ -15,7 +15,7 @@ Contexto estável do repositório para agentes de código. A fonte de verdade é
 | Linguagens | TypeScript, CSS |
 | Runtime | Node.js (via Next.js) |
 | Gerenciador de pacotes | npm (`package-lock.json` presente) |
-| Estado do código | UI ainda no template `create-next-app`; domínio com `domain/match/` (US-01) e `domain/match-config/` (US-02), ambas validadas |
+| Estado do código | UI ainda no template `create-next-app`; domínio `domain/match/` (US-01, US-03, US-04) e `domain/match-config/` (US-02); aplicação `application/match-persistence/` (US-03, US-04); US-01–US-04 validadas |
 
 **Propósito:** digitalizar *Camel Up: The Card Game* para jogar no celular pelo navegador — partidas locais (bots / pass-and-play) no MVP; multiplayer online em evolução futura.
 
@@ -31,8 +31,9 @@ Documento de produto/UX/arquitetura desejada: `docs/game/game-design.md`.
 
 - Experiência **Mobile First** e **Touch First** (prioridade: mobile → tablet → desktop).
 - MVP **local-first**: single-player com bots e pass-and-play **sem servidor**.
-- Separar **domínio do jogo** da UI.
-- Domínio de **partida** (`domain/match`) e de **configuração de nova partida** (`domain/match-config`) já presentes.
+- Separar **domínio do jogo** da UI e da I/O.
+- Domínio de **partida** (`domain/match`) e de **configuração de nova partida** (`domain/match-config`).
+- Persistência de **partida** (criada ou iniciada) via `localStorage` (`application/match-persistence`), sem I/O no domínio.
 - Evoluir para multiplayer online **server-authoritative** sem app nativo.
 - Guidelines em `docs/guidelines/` e skills SDD em `.cursor/skills/`.
 
@@ -42,14 +43,14 @@ Documento de produto/UX/arquitetura desejada: `docs/game/game-design.md`.
 
 ### Não-objetivos / ainda não evidenciados no código
 
-- UI de jogo (ainda template Next.js); wiring UI → domínio ainda não feito.
+- UI de jogo (ainda template Next.js); wiring UI → domínio/aplicação ainda não feito.
 - Regras de movimento, apostas, baralho, fennec/atalho, IA de bots.
 - Backend, game server, WebSocket, banco ou ORM.
 - Autenticação / contas / ranking / matchmaking.
 - Player-hosted como transporte inicial (adiado).
 - PWA obrigatória no primeiro MVP.
 - CI/CD neste diretório do projeto.
-- Persistência de rascunho de configuração ou de partida em disco.
+- Persistência de **rascunho** de configuração (`MatchConfig`); abandono continua sem gravar rascunho.
 - Variáveis de ambiente documentadas (`.env*` no `.gitignore`; sem `.env.example`).
 
 ---
@@ -66,6 +67,7 @@ Documento de produto/UX/arquitetura desejada: `docs/game/game-design.md`.
 | Lint | ESLint flat config | `eslint.config.mjs`, `eslint-config-next@16.3.1` |
 | Testes | Vitest | `^3.2.4` — `vitest.config.ts`, scripts `test` / `test:watch` |
 | Alias de import | `@/*` → raiz do projeto | `tsconfig.json` + alias no Vitest |
+| Persistência local | Web Storage (`localStorage`) via porta `KeyValueStorage` | `application/match-persistence/` |
 
 Não há Prettier, Jest, Playwright, Cypress, Storybook, banco, ORM nem SDKs de cloud no manifesto atual.
 
@@ -80,21 +82,34 @@ Não há Prettier, Jest, Playwright, Cypress, Storybook, banco, ORM nem SDKs de 
 ```text
 Browser
   → app/layout.tsx / app/page.tsx (template UI)
-  → (ainda sem wiring para o domínio)
+  → (ainda sem wiring para domínio ou persistência)
 
-Domínio (puro TypeScript, sem React/Next)
-  domain/match/          # partida (US-01)
-  domain/match-config/   # rascunho de configuração → createMatch (US-02)
+Aplicação (I/O; sem React/Next)
+  application/match-persistence/   # save/load; persistCreatedMatch; startAndPersistMatch
+
+Domínio (puro TypeScript, sem React/Next/localStorage)
+  domain/match/                    # partida, ordem/rodada, início (US-01, US-03, US-04)
+  domain/match-config/             # rascunho de configuração → createMatch (US-02)
 ```
 
 | Módulo | API pública | Papel |
 | --- | --- | --- |
-| `@/domain/match` | `createMatch`, `startMatch`, `validateMatchState`, serialize/deserialize | Estado da partida |
+| `@/domain/match` | `createMatch`, `startMatch`, `validateMatchState`, serialize/deserialize, `getRoundPlayerSequence`, `advancePlayerRound`, `createRandomOrdering` / `identityOrdering` | Estado da partida, sorteio da ordem, sequência por rodada, início |
 | `@/domain/match-config` | `createMatchConfig`, `setMatchMode`, participantes, `validateMatchConfig`, `createMatchFromConfig`, `discardMatchConfig` | Configuração pré-partida |
+| `@/application/match-persistence` | `createMatchPersistence`, `persistCreatedMatch`, `startAndPersistMatch`, `createLocalStorageAdapter`, `createInMemoryStorage` | Persistir/restaurar partida; marcar partida ativa; iniciar e persistir |
 
-Comandos de domínio retornam `DomainResult` (`ok` / `erro`). Estado tratado como dados imutáveis nos comandos (novos objetos no sucesso).
+Comandos de domínio (e persistência) retornam `DomainResult` (`ok` / `erro`). Estado tratado como dados imutáveis nos comandos (novos objetos no sucesso).
 
-`match-config` depende de `match` apenas para gerar a partida (`createMatch`) e reutilizar limites / `BotDifficulty` / `result`.
+`match-config` depende de `match` apenas para gerar a partida (`createMatch`) e reutilizar limites / `BotDifficulty` / `result`. `createMatchFromConfig` pode receber `CreateMatchOptions`, **não** sorteia de novo por conta própria e **não** inicia a partida.
+
+`match-persistence` serializa com `serializeMatchState` / `deserializeMatchState`. **Load não chama `createMatch` nem `startMatch`**, não resorteia e não re-inicia. Passos separados:
+
+```text
+config válida → createMatch / createMatchFromConfig → persistCreatedMatch
+Created válida → startMatch / startAndPersistMatch → RaceSetup persistido
+```
+
+`startAndPersistMatch` só grava se `startMatch` for aceito.
 
 ### Arquitetura desejada (produto)
 
@@ -104,7 +119,7 @@ Fonte: `docs/game/game-design.md` §§41–43, 59–60, 64.
 GAME DOMAIN          ← domain/match + domain/match-config
      │
 APPLICATION ←→ BOT ENGINE
-     │
+     │         (application/match-persistence já existe; BOT ENGINE ainda não)
 Transport: Local | Server | Hosted (futuro)
      │
   Next.js (Mobile / Desktop)
@@ -123,18 +138,23 @@ UI → Command → Domain → GameState → UI
 | Server-authoritative (online futuro) | Cliente não é autoridade |
 | Client Components | Só para interação; lógica fora da árvore de UI |
 | Transports plugáveis | Não acoplar de forma que impeça Local / Server / Hosted |
+| I/O fora do domínio | `localStorage` / `window` só em `application/` (ou UI), nunca em `domain/**` |
 
-### Domínio de partida (US-01)
+### Domínio de partida (US-01 + US-03 + US-04)
 
 | Conceito | Situação no código |
 | --- | --- |
 | Jogadores | 2–6; ≥1 humano; bots com `Easy` \| `Medium` \| `Hard` |
 | Camelos | 6 (`Yellow`…`Red` + `Crazy`); posição = espaço + `stackOrder` |
-| Fases | `Created` … `Finished` |
+| Fases | `Created` … `Finished` (sem fase `in_progress`; “em andamento” de produto = pós-`Created`) |
 | Dinheiro | £ por jogador; criação com 3; válido ≥ 1 |
-| Início | `Created` → `RaceSetup` via `startMatch` |
+| Início | `Created` válida → `RaceSetup` via `startMatch`; `currentTurnPlayerId` = `players[0].id`; não reordena; não avança rodada |
+| Turno × fase | `Created`: turno nulo; `RaceSetup` / `LegInProgress`: turno de jogador existente |
 | Encerrada | Mutações rejeitadas em `Finished` |
-| Serialização | JSON round-trip |
+| Serialização | JSON round-trip; `playerRoundIndex` ausente hidrata como `0`; `RaceSetup` sem turno é rejeitado |
+| Ordem base | Array `players` após o sorteio |
+| Sorteio | Default `createRandomOrdering` (Fisher–Yates, RNG injetável); `identityOrdering` para testes; só na **criação** |
+| Rodada | `getRoundPlayerSequence(players, r)` começa em `P[r mod n]`; `advancePlayerRound` incrementa `playerRoundIndex` |
 
 ### Domínio de configuração (US-02)
 
@@ -145,19 +165,32 @@ UI → Command → Domain → GameState → UI
 | Single-player | Exatamente 1 humano + ≥1 bot; total 2–6 |
 | Pass-and-play | ≥2 humanos; bots opcionais; total 2–6 |
 | Nomes | Sem vazio; sem duplicata (trim + case-insensitive) |
-| Geração | `createMatchFromConfig` → partida `Created` |
+| Geração | `createMatchFromConfig` → partida `Created` (sorteio em `createMatch`; início é US-04) |
 | Abandono | `discardMatchConfig`; sem persistência de rascunho |
 | Dificuldade | Definida na config; preservada na partida; sem API de alteração pós-generate |
+| Isolamento | Mutar rascunho de `MatchConfig` **não** altera partida já gerada/iniciada |
 
-Detalhes: `docs/spec/us-01-dominio-estado-partida/` e `docs/spec/us-02-configuracao-nova-partida/` (+ plan/tasks/implementation/validation).
+### Persistência de partida (US-03 + US-04)
+
+| Conceito | Situação no código |
+| --- | --- |
+| Porta | `KeyValueStorage` (`getItem` / `setItem` / `removeItem`) |
+| Produção | `createLocalStorageAdapter` sobre `localStorage` |
+| Testes | `createInMemoryStorage` + mock de `Storage` |
+| Chaves | Prefixo `camel-up-card-game:`; partida `…match:{id}`; ativa `…active-match-id` |
+| Operações | `saveMatch`, `loadMatch`, `setActiveMatchId`, `getActiveMatchId`, `getActiveMatch` |
+| Orquestração | `persistCreatedMatch` (grava + ativa); `startAndPersistMatch` (`startMatch` e, se ok, persiste) |
+| Reload | Restaura estado serializado; **proibido** novo sorteio ou novo início no load |
+
+Detalhes: `docs/spec/us-01-dominio-estado-partida/`, `docs/spec/us-02-configuracao-nova-partida/`, `docs/spec/us-03-ordem-inicial-jogadores/` e `docs/spec/us-04-fluxo-inicio-partida/` (+ plan/tasks/implementation/validation).
 
 ### Roadmap (alto nível)
 
 | Fase | Foco | Situação |
 | --- | --- | --- |
-| 1 | Domínio + regras + BDD/TDD | Partida + configuração (US-01, US-02); regras de jogo ainda pendentes |
+| 1 | Domínio + regras + BDD/TDD | US-01–US-04 validadas; regras de movimento/apostas/baralho ainda pendentes |
 | 2 | MVP mobile UI + bots + pass-and-play | Não iniciado (UI) |
-| 3 | Persistência local | Não iniciado |
+| 3 | Persistência local | Partida em `localStorage` presente; rascunho de config e wiring UI ainda não |
 | 4–6 | Multiplayer, PWA, contas, etc. | Não iniciado |
 
 ---
@@ -167,8 +200,10 @@ Detalhes: `docs/spec/us-01-dominio-estado-partida/` e `docs/spec/us-02-configura
 ```text
 camel-up-card-game/
 ├── app/                         # Next.js App Router (template UI)
+├── application/
+│   └── match-persistence/       # Persistência de partida (US-03, US-04)
 ├── domain/
-│   ├── match/                   # Domínio da partida (US-01)
+│   ├── match/                   # Domínio da partida (US-01, US-03, US-04)
 │   └── match-config/            # Configuração de nova partida (US-02)
 ├── public/
 ├── docs/
@@ -176,8 +211,10 @@ camel-up-card-game/
 │   ├── guidelines/              # 01–08
 │   ├── spec/
 │   │   ├── us-01-dominio-estado-partida/
-│   │   └── us-02-configuracao-nova-partida/
-│   ├── plan/…                   # us-01, us-02
+│   │   ├── us-02-configuracao-nova-partida/
+│   │   ├── us-03-ordem-inicial-jogadores/
+│   │   └── us-04-fluxo-inicio-partida/
+│   ├── plan/…                   # us-01 … us-04
 │   ├── tasks/…
 │   ├── implementation/…
 │   └── validation/…
@@ -213,12 +250,15 @@ Organização futura de UI/features: por domínio, com colocation — `docs/guid
 
 Consultar `docs/guidelines/01`–`08`.
 
-### Domínio
+### Domínio e aplicação
 
-- Código em `domain/**` **sem** imports de `react` ou `next`.
+- Código em `domain/**` **sem** imports de `react`, `next`, `localStorage` ou `window`.
+- Código em `application/**` **sem** imports de `react` ou `next`; I/O de storage via porta injetável.
 - Preferir `DomainResult` para rejeições explícitas.
 - Testes unitários colocalizados (`*.test.ts`) com Vitest, ambiente `node`.
-- Regras de **modo de partida** em `match-config`; regras/estado de **partida** em `match` — não misturar.
+- Regras de **modo de partida** em `match-config`; regras/estado de **partida** em `match`; I/O de persistência em `application/match-persistence` — não misturar.
+- Sorteio só na **criação**; início só a partir de `Created` válida; restaurar do storage **não** reordena nem re-inicia.
+- Não fundir generate e início num único comando de domínio (`startFromConfig` não existe).
 
 ### TypeScript / Next
 
@@ -240,9 +280,9 @@ Skills: specification → plan → tasks → implementation → validation. Deta
 | --- | --- |
 | Runner | Vitest 3.2.4 (`vitest.config.ts`, env `node`) |
 | Scripts | `npm test` (`vitest run`), `npm run test:watch` |
-| Domínio | `domain/match/*.test.ts` + `domain/match-config/*.test.ts` (suíte validada: **45** testes) |
+| Domínio + aplicação | `domain/match/*.test.ts`, `domain/match-config/*.test.ts`, `application/match-persistence/*.test.ts` (suíte validada: **82** testes, 14 arquivos) |
 | UI / E2E | Ainda não configurados |
-| Diretriz | Guideline `08-testing.md`; domínio com TDD |
+| Diretriz | Guideline `08-testing.md`; domínio/aplicação com TDD |
 
 ---
 
@@ -251,13 +291,14 @@ Skills: specification → plan → tasks → implementation → validation. Deta
 - `.env*` no `.gitignore`; **nunca** copiar segredos para `AGENTS.md` ou commits.
 - Nenhuma variável de ambiente em uso no código atual.
 - Online futuro: cartas/estado privado nunca no estado público da UI.
-- Metadata/`lang` ainda do template.
+- Metadata/`lang` ainda do template (`Create Next App`, `lang="en"`).
+- Chaves de `localStorage` prefixadas com `camel-up-card-game:` (não são segredos).
 
 ---
 
 ## Infraestrutura e deploy
 
-- MVP local: infra ≈ zero (cliente).
+- MVP local: infra ≈ zero (cliente); persistência de partida no `localStorage` do navegador.
 - Multiplayer futuro: frontend + game server + database (não implementado).
 - README menciona Vercel; sem `vercel.json`, Dockerfile ou CI neste projeto.
 - Sem instalação nativa obrigatória; PWA opcional depois.
@@ -281,13 +322,15 @@ npm run test:watch   # vitest (watch)
 ## Instruções para agentes de código
 
 1. Código + este arquivo + `docs/` são a fonte de verdade; não inventar stack ou serviços inexistentes.
-2. Domínio em `domain/**`, fora de React; UI só renderiza e despacha comandos.
-3. Configuração de nova partida → `domain/match-config`; estado/regras de partida → `domain/match`.
+2. Domínio em `domain/**`, fora de React e de I/O de browser; UI só renderiza e despacha comandos.
+3. Configuração de nova partida → `domain/match-config`; estado/regras de partida → `domain/match`; persistência de partida → `application/match-persistence`.
 4. Antes de features de produto: `docs/game/game-design.md`, guidelines e fluxo SDD quando aplicável.
 5. Mobile First / Touch First; desktop é adaptação.
 6. MVP local-first: não exigir servidor para bots/pass-and-play.
 7. Preferir Server Components; `"use client"` só com motivo concreto.
-8. Rodar `npm test` (e lint/build quando relevante) ao alterar domínio.
-9. Não adicionar auth, banco, WebSocket, persistência de rascunho ou CI sem spec/plan.
+8. Rodar `npm test` (e lint/build quando relevante) ao alterar domínio ou aplicação.
+9. Não adicionar auth, banco, WebSocket, persistência de rascunho de config ou CI sem spec/plan.
 10. Não criar artefatos SDD a partir desta skill — use as skills correspondentes.
 11. Idioma de artefatos de processo: **pt-BR**; identificadores técnicos conforme o código.
+12. Não sortear de novo nem re-iniciar ao carregar partida persistida; não persistir rascunho de `MatchConfig`.
+13. `startMatch` só a partir de `Created` válida; gerar e iniciar são passos separados.
