@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { identityOrdering, startMatch } from "@/domain/match";
 import {
   addParticipant,
   createMatchConfig,
@@ -317,6 +318,52 @@ describe("createMatchFromConfig", () => {
     expect(names).toHaveLength(4);
     expect(new Set(names).size).toBe(4);
     expect([...names].sort()).toEqual(["Ana", "Bia", "Caio", "Duda"].sort());
+  });
+});
+
+describe("início a partir da configuração (US-04)", () => {
+  it("config inválida não produz partida RaceSetup", () => {
+    const config = withMode("SinglePlayerVsBots");
+    const generated = createMatchFromConfig(config);
+    expect(generated.ok).toBe(false);
+    expect(generated.ok ? generated.value.phase : undefined).not.toBe(
+      "RaceSetup",
+    );
+  });
+
+  it("alterar rascunho de config não muda partida já iniciada", () => {
+    let config = withMode("SinglePlayerVsBots");
+    const human = addParticipant(config, { name: "Felipe", type: "Human" });
+    if (!human.ok) throw new Error("human");
+    config = human.value;
+    const bot = addParticipant(config, {
+      name: "Bot Easy",
+      type: "Bot",
+      difficulty: "Easy",
+    });
+    if (!bot.ok) throw new Error("bot");
+    config = bot.value;
+
+    const generated = createMatchFromConfig(config, "m-start", {
+      ordering: identityOrdering,
+    });
+    if (!generated.ok) throw new Error("generate");
+    const started = startMatch(generated.value);
+    if (!started.ok) throw new Error("start");
+
+    const snapshot = structuredClone(started.value);
+    const humanId = config.participants.find((p) => p.type === "Human")?.id;
+    if (!humanId) throw new Error("human id");
+    const updated = updateParticipant(config, humanId, {
+      name: "Outro Nome",
+      type: "Human",
+    });
+    expect(updated.ok).toBe(true);
+    expect(started.value).toEqual(snapshot);
+    expect(started.value.players.map((p) => p.name)).toEqual([
+      "Felipe",
+      "Bot Easy",
+    ]);
   });
 });
 

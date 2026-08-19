@@ -57,4 +57,32 @@ describe("validateMatchState", () => {
   it("aceita Finished válido", () => {
     expect(validateMatchState(buildValidFinishedMatch()).ok).toBe(true);
   });
+
+  it("rejeita Created com turno definido", () => {
+    const state = {
+      ...buildValidCreatedMatch(),
+      currentTurnPlayerId: "h1",
+    };
+    expect(validateMatchState(state).ok).toBe(false);
+  });
+
+  it("rejeita RaceSetup sem turno", () => {
+    const state = {
+      ...buildValidCreatedMatch(),
+      phase: "RaceSetup",
+      currentTurnPlayerId: null,
+    };
+    expect(validateMatchState(state).ok).toBe(false);
+  });
+
+  it("aceita RaceSetup com turno de jogador existente", () => {
+    const created = buildValidCreatedMatch();
+    const state = {
+      ...created,
+      phase: "RaceSetup",
+      currentTurnPlayerId: created.players[1]!.id,
+    };
+    expect(validateMatchState(state).ok).toBe(true);
+  });
 });
+

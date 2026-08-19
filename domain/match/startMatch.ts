@@ -1,5 +1,6 @@
 import { err, ok } from "./result";
 import type { DomainResult, MatchState } from "./types";
+import { validateMatchState } from "./validateMatchState";
 
 export function startMatch(state: MatchState): DomainResult<MatchState> {
   if (state.phase === "Finished") {
@@ -16,10 +17,14 @@ export function startMatch(state: MatchState): DomainResult<MatchState> {
     );
   }
 
+  const valid = validateMatchState(state);
+  if (!valid.ok) return valid;
+
   return ok({
-    ...state,
-    players: state.players.map((p) => ({ ...p })),
-    camels: state.camels.map((c) => ({ ...c })),
+    ...valid.value,
+    players: valid.value.players.map((p) => ({ ...p })),
+    camels: valid.value.camels.map((c) => ({ ...c })),
     phase: "RaceSetup",
+    currentTurnPlayerId: valid.value.players[0]!.id,
   });
 }
