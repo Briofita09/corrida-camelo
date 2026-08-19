@@ -220,14 +220,18 @@ export function validateMatchState(input: unknown): DomainResult<MatchState> {
     return err("INVALID_TURN", "Turno atual inválido.");
   }
 
-  if (raw.phase === "LegInProgress") {
+  if (raw.phase === "Created" && raw.currentTurnPlayerId !== null) {
+    return err("INVALID_TURN", "Em Created o turno deve ser nulo.");
+  }
+
+  if (raw.phase === "RaceSetup" || raw.phase === "LegInProgress") {
     if (
       typeof raw.currentTurnPlayerId !== "string" ||
       !playersResult.value.some((p) => p.id === raw.currentTurnPlayerId)
     ) {
       return err(
         "INVALID_TURN",
-        "Em LegInProgress o turno deve referenciar um jogador existente.",
+        `Em ${raw.phase} o turno deve referenciar um jogador existente.`,
       );
     }
   }
