@@ -1,5 +1,5 @@
-export { advancePlayerRound } from "./advancePlayerRound";
 export { createMatch } from "./createMatch";
+export { performTurnAction } from "./performTurnAction";
 export { getRoundPlayerSequence } from "./getRoundPlayerSequence";
 export {
   createRandomOrdering,
