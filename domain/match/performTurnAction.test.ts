@@ -49,7 +49,13 @@ describe("performTurnAction", () => {
     expect(result.value.players.map((p) => p.id)).toEqual(["A", "B", "C"]);
     expect(result.value.players.every((p) => p.money === 3)).toBe(true);
     expect(result.value.camels).toHaveLength(6);
-    expect(result.value.camels.every((c) => c.space === 0)).toBe(true);
+    expect(result.value.camels).toEqual(started.camels);
+    expect(result.value.setupRevealedRacingCards).toEqual(
+      started.setupRevealedRacingCards,
+    );
+    expect(result.value.remainingRacingCards).toEqual(
+      started.remainingRacingCards,
+    );
     expect(started).toEqual(snapshot);
     expect(started.currentTurnPlayerId).toBe("A");
   });

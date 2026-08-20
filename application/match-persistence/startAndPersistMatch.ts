@@ -1,4 +1,4 @@
-import { startMatch, type DomainResult, type MatchState } from "@/domain/match";
+import { startMatch, type DomainResult, type MatchState, type StartMatchOptions } from "@/domain/match";
 import type { MatchPersistence } from "./matchPersistence";
 import { persistCreatedMatch } from "./persistCreatedMatch";
 
@@ -9,8 +9,9 @@ import { persistCreatedMatch } from "./persistCreatedMatch";
 export function startAndPersistMatch(
   state: MatchState,
   persistence: MatchPersistence,
+  options?: StartMatchOptions,
 ): DomainResult<MatchState> {
-  const started = startMatch(state);
+  const started = startMatch(state, options);
   if (!started.ok) return started;
   return persistCreatedMatch(started.value, persistence);
 }

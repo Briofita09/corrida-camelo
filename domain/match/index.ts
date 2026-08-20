@@ -9,6 +9,10 @@ export {
   type RandomFn,
 } from "./playerOrdering";
 export {
+  identityRacingCardOrdering,
+  createOfficialRacingDeck,
+} from "./racingCards";
+export {
   deserializeMatchState,
   serializeMatchState,
 } from "./serialize";
@@ -31,11 +35,17 @@ export {
   type HumanPlayer,
   type MatchState,
   type Player,
+  type RacingCamelId,
+  type RacingCard,
+  type StartMatchOptions,
 } from "./types";
 export {
   INITIAL_MONEY,
+  INITIAL_SETUP_REVEAL_COUNT,
   MAX_PLAYERS,
   MIN_MONEY,
   MIN_PLAYERS,
+  OFFICIAL_RACING_DECK_SIZE,
+  RACING_CAMEL_IDS,
   START_SPACE,
 } from "./constants";

@@ -1,8 +1,22 @@
+import { START_SPACE } from "./constants";
 import { err, ok } from "./result";
-import type { DomainResult, MatchState } from "./types";
+import {
+  copyRacingCards,
+  racingCamelsAreAtStart,
+  resolveSetupRacingCards,
+} from "./racingCards";
+import { determineInitialCamelPositions } from "./determineInitialCamelPositions";
+import type {
+  DomainResult,
+  MatchState,
+  StartMatchOptions,
+} from "./types";
 import { validateMatchState } from "./validateMatchState";
 
-export function startMatch(state: MatchState): DomainResult<MatchState> {
+export function startMatch(
+  state: MatchState,
+  options?: StartMatchOptions,
+): DomainResult<MatchState> {
   if (state.phase === "Finished") {
     return err(
       "MATCH_FINISHED",
@@ -20,11 +34,36 @@ export function startMatch(state: MatchState): DomainResult<MatchState> {
   const valid = validateMatchState(state);
   if (!valid.ok) return valid;
 
+  if (!racingCamelsAreAtStart(valid.value.camels)) {
+    return err(
+      "CAMELS_NOT_AT_START",
+      "Os camelos de corrida devem estar atrás da linha de partida.",
+    );
+  }
+
+  const crazy = valid.value.camels.find((camel) => camel.id === "Crazy");
+  if (crazy && crazy.space !== START_SPACE) {
+    return err(
+      "CAMELS_NOT_AT_START",
+      "Os camelos de corrida devem estar atrás da linha de partida.",
+    );
+  }
+
+  const cards = resolveSetupRacingCards(options);
+  if (!cards.ok) return cards;
+
+  const camels = determineInitialCamelPositions(
+    valid.value.camels,
+    cards.value.revealed,
+  );
+
   return ok({
     ...valid.value,
     players: valid.value.players.map((p) => ({ ...p })),
-    camels: valid.value.camels.map((c) => ({ ...c })),
+    camels,
     phase: "RaceSetup",
     currentTurnPlayerId: valid.value.players[0]!.id,
+    setupRevealedRacingCards: copyRacingCards(cards.value.revealed),
+    remainingRacingCards: copyRacingCards(cards.value.remaining),
   });
 }
