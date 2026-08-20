@@ -1,9 +1,17 @@
 import {
+  INITIAL_SETUP_REVEAL_COUNT,
   MAX_PLAYERS,
   MIN_MONEY,
   MIN_PLAYERS,
+  OFFICIAL_RACING_DECK_SIZE,
+  START_SPACE,
 } from "./constants";
 import { err, ok } from "./result";
+import {
+  createOfficialRacingDeck,
+  isRacingCard,
+  racingCardMultisetsEqual,
+} from "./racingCards";
 import {
   BOT_DIFFICULTIES,
   CAMEL_IDS,
@@ -15,6 +23,7 @@ import {
   type GamePhase,
   type MatchState,
   type Player,
+  type RacingCard,
 } from "./types";
 
 function isGamePhase(value: unknown): value is GamePhase {
@@ -192,6 +201,101 @@ function validateCamels(camels: unknown): DomainResult<CamelState[]> {
   return ok(normalized);
 }
 
+function parseRacingCardList(value: unknown): DomainResult<RacingCard[]> {
+  if (!Array.isArray(value)) {
+    return err("INVALID_RACING_CARDS", "Lista de cartas de corrida inválida.");
+  }
+  const cards: RacingCard[] = [];
+  for (const raw of value) {
+    if (!raw || typeof raw !== "object") {
+      return err("INVALID_RACING_CARD", "Carta de corrida inválida.");
+    }
+    const card = raw as { camelId?: unknown; value?: unknown };
+    if (typeof card.camelId !== "string" || typeof card.value !== "number") {
+      return err("INVALID_RACING_CARD", "Carta de corrida inválida.");
+    }
+    const candidate = { camelId: card.camelId, value: card.value };
+    if (!isRacingCard(candidate)) {
+      return err(
+        "INVALID_RACING_CARD",
+        "Somente cartas de corrida com valor 1 ou 2 são válidas.",
+      );
+    }
+    cards.push({ camelId: candidate.camelId, value: candidate.value });
+  }
+  return ok(cards);
+}
+
+function validateSetupCardFields(
+  phase: GamePhase,
+  raw: Record<string, unknown>,
+): DomainResult<{
+  setupRevealedRacingCards: RacingCard[] | null;
+  remainingRacingCards: RacingCard[] | null;
+}> {
+  if (phase === "Created") {
+    if (
+      raw.setupRevealedRacingCards !== null &&
+      raw.setupRevealedRacingCards !== undefined
+    ) {
+      return err(
+        "INVALID_RACING_CARDS",
+        "Em Created as cartas reveladas da preparação devem ser nulas.",
+      );
+    }
+    if (
+      raw.remainingRacingCards !== null &&
+      raw.remainingRacingCards !== undefined
+    ) {
+      return err(
+        "INVALID_RACING_CARDS",
+        "Em Created o pool restante de cartas deve ser nulo.",
+      );
+    }
+    return ok({
+      setupRevealedRacingCards: null,
+      remainingRacingCards: null,
+    });
+  }
+
+  const revealedResult = parseRacingCardList(raw.setupRevealedRacingCards);
+  if (!revealedResult.ok) return revealedResult;
+  const remainingResult = parseRacingCardList(raw.remainingRacingCards);
+  if (!remainingResult.ok) return remainingResult;
+
+  const revealed = revealedResult.value;
+  const remaining = remainingResult.value;
+
+  if (revealed.length !== INITIAL_SETUP_REVEAL_COUNT) {
+    return err(
+      "INVALID_REVEAL_COUNT",
+      `Devem ser reveladas exatamente ${INITIAL_SETUP_REVEAL_COUNT} cartas.`,
+    );
+  }
+  if (
+    remaining.length !==
+    OFFICIAL_RACING_DECK_SIZE - INITIAL_SETUP_REVEAL_COUNT
+  ) {
+    return err(
+      "INVALID_RACING_CARDS",
+      "O pool restante deve conter 25 cartas de corrida.",
+    );
+  }
+
+  const official = createOfficialRacingDeck();
+  if (!racingCardMultisetsEqual([...revealed, ...remaining], official)) {
+    return err(
+      "INVALID_RACING_CARDS",
+      "As cartas reveladas e o pool restante devem formar o baralho oficial.",
+    );
+  }
+
+  return ok({
+    setupRevealedRacingCards: revealed,
+    remainingRacingCards: remaining,
+  });
+}
+
 export function validateMatchState(input: unknown): DomainResult<MatchState> {
   if (!input || typeof input !== "object") {
     return err("INVALID_STATE", "Estado da partida inválido.");
@@ -212,6 +316,18 @@ export function validateMatchState(input: unknown): DomainResult<MatchState> {
 
   const camelsResult = validateCamels(raw.camels);
   if (!camelsResult.ok) return camelsResult;
+
+  if (raw.phase === "Created") {
+    if (camelsResult.value.some((camel) => camel.space !== START_SPACE)) {
+      return err(
+        "CAMELS_NOT_AT_START",
+        "Em Created todos os camelos devem estar no espaço 0.",
+      );
+    }
+  }
+
+  const cardsResult = validateSetupCardFields(raw.phase, raw);
+  if (!cardsResult.ok) return cardsResult;
 
   if (
     raw.currentTurnPlayerId !== null &&
@@ -277,5 +393,7 @@ export function validateMatchState(input: unknown): DomainResult<MatchState> {
     currentTurnPlayerId: raw.currentTurnPlayerId as string | null,
     currentLeg: raw.currentLeg,
     playerRoundIndex,
+    setupRevealedRacingCards: cardsResult.value.setupRevealedRacingCards,
+    remainingRacingCards: cardsResult.value.remainingRacingCards,
   });
 }

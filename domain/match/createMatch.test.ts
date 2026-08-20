@@ -88,6 +88,8 @@ describe("createMatch — caminho feliz", () => {
     expect(state.players).toHaveLength(3);
     expect(state.players.every((p) => p.money === 3)).toBe(true);
     expect(state.camels).toHaveLength(6);
+    expect(state.setupRevealedRacingCards).toBeNull();
+    expect(state.remainingRacingCards).toBeNull();
     expect(state.camels.map((c) => c.id).sort()).toEqual(
       ["Blue", "Crazy", "Green", "Purple", "Red", "Yellow"].sort(),
     );

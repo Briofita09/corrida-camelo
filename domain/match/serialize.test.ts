@@ -47,6 +47,16 @@ describe("serialize / deserialize", () => {
     );
   });
 
+  it("rejeita desserializar RaceSetup sem cartas de preparação", () => {
+    const created = buildValidCreatedMatch();
+    const payload = JSON.stringify({
+      ...created,
+      phase: "RaceSetup",
+      currentTurnPlayerId: created.players[0]!.id,
+    });
+    expect(deserializeMatchState(payload).ok).toBe(false);
+  });
+
   it("rejeita desserializar RaceSetup sem turno", () => {
     const created = buildValidCreatedMatch();
     const payload = JSON.stringify({

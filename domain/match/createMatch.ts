@@ -132,5 +132,7 @@ export function createMatch(
     currentTurnPlayerId: null,
     currentLeg: 0,
     playerRoundIndex: 0,
+    setupRevealedRacingCards: null,
+    remainingRacingCards: null,
   });
 }

@@ -1,5 +1,6 @@
 import { err, ok } from "./result";
 import { getRoundPlayerSequence } from "./getRoundPlayerSequence";
+import { copyRacingCards } from "./racingCards";
 import type { DomainResult, MatchState } from "./types";
 
 /**
@@ -33,5 +34,7 @@ export function applyNextTurn(state: MatchState): DomainResult<MatchState> {
     camels: state.camels.map((c) => ({ ...c })),
     currentTurnPlayerId: nextTurnPlayerId,
     playerRoundIndex,
+    setupRevealedRacingCards: copyRacingCards(state.setupRevealedRacingCards),
+    remainingRacingCards: copyRacingCards(state.remainingRacingCards),
   });
 }

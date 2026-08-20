@@ -23,6 +23,18 @@ export const CAMEL_IDS = [
 ] as const;
 export type CamelId = (typeof CAMEL_IDS)[number];
 
+export type RacingCamelId = Exclude<CamelId, "Crazy">;
+
+export type RacingCard = {
+  camelId: RacingCamelId;
+  value: 1 | 2;
+};
+
+export type StartMatchOptions = {
+  shuffleRacingCards?: (deck: RacingCard[]) => RacingCard[];
+  revealedRacingCards?: ReadonlyArray<{ camelId: string; value: number }>;
+};
+
 export type CamelDirection = "TowardFinish" | "TowardStart";
 
 export type HumanPlayer = {
@@ -58,6 +70,10 @@ export type MatchState = {
   currentLeg: number;
   /** Índice da rodada de jogadores (deslocamento sobre a ordem base em `players`). */
   playerRoundIndex: number;
+  /** Cinco cartas reveladas na preparação inicial; `null` enquanto a partida está Created. */
+  setupRevealedRacingCards: RacingCard[] | null;
+  /** Pool restante de cartas de corrida (25 após o início); `null` em Created. */
+  remainingRacingCards: RacingCard[] | null;
 };
 
 export type CreateMatchPlayerInput =

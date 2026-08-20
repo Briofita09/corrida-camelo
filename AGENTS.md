@@ -15,13 +15,28 @@ Contexto estável do repositório para agentes de código. A fonte de verdade é
 | Linguagens | TypeScript, CSS |
 | Runtime | Node.js (via Next.js) |
 | Gerenciador de pacotes | npm (`package-lock.json` presente) |
-| Estado do código | UI ainda no template `create-next-app`; domínio `domain/match/` (US-01, US-03, US-04) e `domain/match-config/` (US-02); aplicação `application/match-persistence/` (US-03, US-04); US-01–US-04 validadas |
+| Estado do código | UI ainda no template `create-next-app`; domínio `domain/match/` (US-01, US-03, US-04, US-05, US-06) e `domain/match-config/` (US-02); aplicação `application/match-persistence/` (US-03, US-04, US-05, US-06); US-01–US-06 implementadas |
 
 **Propósito:** digitalizar *Camel Up: The Card Game* para jogar no celular pelo navegador — partidas locais (bots / pass-and-play) no MVP; multiplayer online em evolução futura.
 
-Documento de produto/UX/arquitetura desejada: `docs/game/game-design.md`.
-
 `CLAUDE.md` apenas referencia este `AGENTS.md`.
+
+---
+
+## Fontes de verdade (documentação)
+
+Não misturar estes papéis:
+
+| Documento | Papel |
+| --- | --- |
+| `docs/rules/corrida_camelo_regras.md` | Regras oficiais do jogo de mesa (mecânica: componentes, preparação, movimento, etapa, apostas, fim de jogo). Fonte de verdade das **regras do jogo original**. |
+| `docs/game/game-design.md` | Produto, UX Mobile First e arquitetura **desejada** da aplicação. |
+| `docs/spec/<feature>/spec.md` (+ plan/tasks/implementation/validation) | Fatia implementável e o que já foi acordado para o código. |
+| Código em `domain/`, `application/`, `app/` | O que existe de fato. |
+
+Ao implementar mecânica de mesa, consultar primeiro as regras oficiais e a spec da fatia. Adaptações digitais (bots, persistência, modelo de turno já no código, piso de £) vivem na spec/código — **não** “corrigir” o domínio só porque o manual físico diz outra coisa, sem spec.
+
+`game-design.md` não substitui o manual; o manual não substitui UX, stack nem o que já está implementado.
 
 ---
 
@@ -33,7 +48,7 @@ Documento de produto/UX/arquitetura desejada: `docs/game/game-design.md`.
 - MVP **local-first**: single-player com bots e pass-and-play **sem servidor**.
 - Separar **domínio do jogo** da UI e da I/O.
 - Domínio de **partida** (`domain/match`) e de **configuração de nova partida** (`domain/match-config`).
-- Persistência de **partida** (criada ou iniciada) via `localStorage` (`application/match-persistence`), sem I/O no domínio.
+- Persistência de **partida** (criada, iniciada ou após ação de turno aceita) via `localStorage` (`application/match-persistence`), sem I/O no domínio.
 - Evoluir para multiplayer online **server-authoritative** sem app nativo.
 - Guidelines em `docs/guidelines/` e skills SDD em `.cursor/skills/`.
 
@@ -44,7 +59,8 @@ Documento de produto/UX/arquitetura desejada: `docs/game/game-design.md`.
 ### Não-objetivos / ainda não evidenciados no código
 
 - UI de jogo (ainda template Next.js); wiring UI → domínio/aplicação ainda não feito.
-- Regras de movimento, apostas, baralho, fennec/atalho, IA de bots.
+- Regras de mesa do manual ainda não no domínio: apostas, baralho da etapa, feneco/atalho, tempestade de areia, preparação/pagamento de etapa, fim de corrida, IA de bots. Posições iniciais dos camelos de corrida (US-06) já estão no início da partida.
+- Comando público de pular turno / avançar rodada sem ação válida (`advancePlayerRound` foi removido).
 - Backend, game server, WebSocket, banco ou ORM.
 - Autenticação / contas / ranking / matchmaking.
 - Player-hosted como transporte inicial (adiado).
@@ -52,6 +68,72 @@ Documento de produto/UX/arquitetura desejada: `docs/game/game-design.md`.
 - CI/CD neste diretório do projeto.
 - Persistência de **rascunho** de configuração (`MatchConfig`); abandono continua sem gravar rascunho.
 - Variáveis de ambiente documentadas (`.env*` no `.gitignore`; sem `.env.example`).
+
+---
+
+## Regras oficiais do jogo (referência)
+
+Fonte: `docs/rules/corrida_camelo_regras.md` (versão 1.0, editora Galápagos). Resumo estável para agentes — **não** substitui o manual.
+
+### Objetivo e fim de jogo
+
+Cinco camelos de corrida disputam várias **etapas**. Jogadores apostam nas posições para ganhar Libras Egípcias. A corrida acaba quando a primeira **unidade de camelo** cruza a linha de chegada (carta de chegada). Nenhuma ação de aposta é permitida nesse momento; há pagamento da etapa e depois das apostas finais. Vence quem tiver mais dinheiro; empate é vitória partilhada.
+
+O **camelo doido** está desclassificado: não pode vencer a corrida e é ignorado na classificação.
+
+### Elenco e componentes relevantes
+
+- **2–6 jogadores** (carta de preparação da etapa conforme o número de jogadores).
+- **5 camelos de corrida** (cores) + **1 camelo doido** (corre na direção oposta).
+- Cartas de corrida (30: cinco “1” e uma “2” por cor) + 5 cartas de camelo doido (duas “0”, duas “1”, uma “2”).
+- Pista: cartas de pista + carta de chegada; verso das cartas de pista = tempestade de areia.
+- Apostas de etapa (vencedor 5/3/2 e intermediária) e apostas finais (vencedor / perdedor).
+- Feneco e atalho (ficha + marcador + carta).
+- Cada jogador começa com **3 Libras**, 1 ficha de feneco e 1 ficha de atalho.
+
+### Movimento (manual)
+
+- Camelos na mesma casa formam **pilha** (exceto atrás da linha de partida). Quem se move carrega os que estão **em cima**; os de baixo ficam.
+- Unidade (um camelo ou pilha) que termina em outra unidade **sobe** nela.
+- Camelo doido usa a mesma pilha; pode carregar camelos de corrida rumo à partida. Não passa da linha de partida. Carta “0” não move, salvo a exceção abaixo.
+- Exceção: unidade nas costas do camelo doido → **+1** ao movimento da carta do camelo doido (inclusive “0” → 1 casa).
+- Mais alto na pilha = mais à frente na classificação.
+
+### Turno e etapa (manual)
+
+O jogador com o marcador de jogador inicial começa a etapa; depois, sentido horário.
+
+Em cada turno o jogador:
+
+- **deve** fazer exatamente **uma** ação de pista;
+- **pode** fazer exatamente **uma** ação de aposta (antes ou depois da ação de pista).
+
+Ações de pista: posicionar feneco ou atalho; revelar o topo do baralho de corrida; ou jogar a carta à sua frente (ou a de um oponente, pagando 1 Libra).
+
+A etapa termina quando alguém revela a **última** carta do baralho de corrida (move, passa o marcador inicial à esquerda, sem aposta depois se ainda não a fez). Segue pagamento da etapa e nova preparação de etapa.
+
+### Mapeamento de vocabulário
+
+| Manual (`docs/rules`) | Código / produto |
+| --- | --- |
+| Camelo doido | `Crazy` (`TowardStart`) |
+| Camelos de corrida (amarelo, verde, azul, roxo, vermelho) | `Yellow`, `Green`, `Blue`, `Purple`, `Red` (`TowardFinish`) |
+| Etapa | `currentLeg` / fases `LegSetup`, `LegInProgress`, `LegPayout` |
+| Libras Egípcias | `money` |
+| Feneco / atalho | ainda não no domínio (UX em `game-design.md`) |
+| Marcador de jogador inicial | aproximado por ordem `players` + `playerRoundIndex` (modelo digital US-03/US-05, não o marcador físico) |
+
+### Lacunas conhecidas (manual × código)
+
+O domínio **não** implementa ainda o manual. Diferenças estáveis a não “consertar” sem spec:
+
+| Tema | Manual | Código atual |
+| --- | --- | --- |
+| Posição inicial | 5 cartas reveladas para os camelos de corrida; camelo doido na casa 7 | Camelos de corrida posicionados no `startMatch` (30 cartas, revela 5, pilha); `Crazy` permanece no espaço 0 |
+| Cartas da preparação | As 5 cartas da largada saem do pool (adaptação US-06) | `setupRevealedRacingCards` (5) + `remainingRacingCards` (25); baralho da etapa ainda não montado |
+| Dinheiro após pagamentos | Nunca abaixo de **0** | `MIN_MONEY = 1` (US-01) |
+| Turno | Horário + ação de pista obrigatória + aposta opcional; etapa acaba no último card do baralho | Stub `performTurnAction`: só autorização + avanço pela sequência US-03 |
+| Fichas feneco/atalho, baralho, apostas, tempestade, extensão de pista | Regras §§6–11 | Ausentes |
 
 ---
 
@@ -85,31 +167,34 @@ Browser
   → (ainda sem wiring para domínio ou persistência)
 
 Aplicação (I/O; sem React/Next)
-  application/match-persistence/   # save/load; persistCreatedMatch; startAndPersistMatch
+  application/match-persistence/   # save/load; persistCreatedMatch; startAndPersistMatch; performTurnActionAndPersist
 
 Domínio (puro TypeScript, sem React/Next/localStorage)
-  domain/match/                    # partida, ordem/rodada, início (US-01, US-03, US-04)
+  domain/match/                    # partida, ordem/rodada, início, turno (US-01, US-03, US-04, US-05)
   domain/match-config/             # rascunho de configuração → createMatch (US-02)
 ```
 
 | Módulo | API pública | Papel |
 | --- | --- | --- |
-| `@/domain/match` | `createMatch`, `startMatch`, `validateMatchState`, serialize/deserialize, `getRoundPlayerSequence`, `advancePlayerRound`, `createRandomOrdering` / `identityOrdering` | Estado da partida, sorteio da ordem, sequência por rodada, início |
+| `@/domain/match` | `createMatch`, `startMatch`, `performTurnAction`, `validateMatchState`, serialize/deserialize, `getRoundPlayerSequence`, `createRandomOrdering` / `identityOrdering`, `identityRacingCardOrdering` / `createOfficialRacingDeck` | Estado da partida, sorteio da ordem, sequência por rodada, início (inclui posições iniciais US-06), autorização e avanço de turno |
 | `@/domain/match-config` | `createMatchConfig`, `setMatchMode`, participantes, `validateMatchConfig`, `createMatchFromConfig`, `discardMatchConfig` | Configuração pré-partida |
-| `@/application/match-persistence` | `createMatchPersistence`, `persistCreatedMatch`, `startAndPersistMatch`, `createLocalStorageAdapter`, `createInMemoryStorage` | Persistir/restaurar partida; marcar partida ativa; iniciar e persistir |
+| `@/application/match-persistence` | `createMatchPersistence`, `persistCreatedMatch`, `startAndPersistMatch`, `performTurnActionAndPersist`, `createLocalStorageAdapter`, `createInMemoryStorage` | Persistir/restaurar partida; marcar partida ativa; iniciar e persistir; persistir após ação de turno aceita |
 
 Comandos de domínio (e persistência) retornam `DomainResult` (`ok` / `erro`). Estado tratado como dados imutáveis nos comandos (novos objetos no sucesso).
 
 `match-config` depende de `match` apenas para gerar a partida (`createMatch`) e reutilizar limites / `BotDifficulty` / `result`. `createMatchFromConfig` pode receber `CreateMatchOptions`, **não** sorteia de novo por conta própria e **não** inicia a partida.
 
-`match-persistence` serializa com `serializeMatchState` / `deserializeMatchState`. **Load não chama `createMatch` nem `startMatch`**, não resorteia e não re-inicia. Passos separados:
+`match-persistence` serializa com `serializeMatchState` / `deserializeMatchState`. **Load não chama `createMatch`, `startMatch` nem `performTurnAction`**, não resorteia, não re-inicia e não reexecuta ação de turno. Passos separados:
 
 ```text
 config válida → createMatch / createMatchFromConfig → persistCreatedMatch
 Created válida → startMatch / startAndPersistMatch → RaceSetup persistido
+RaceSetup / LegInProgress → performTurnAction / performTurnActionAndPersist → novo ativo persistido
 ```
 
-`startAndPersistMatch` só grava se `startMatch` for aceito.
+`startAndPersistMatch` e `performTurnActionAndPersist` só gravam se o comando de domínio for aceito. `persistCreatedMatch` grava o estado e marca a partida ativa (reutilizado após criação, início e ação de turno).
+
+Helpers internos de turno (`assertPlayerMayPerformTurnAction`, `applyNextTurn`) **não** fazem parte do barrel público de `@/domain/match`. Não existe comando público `advancePlayerRound`.
 
 ### Arquitetura desejada (produto)
 
@@ -148,13 +233,29 @@ UI → Command → Domain → GameState → UI
 | Camelos | 6 (`Yellow`…`Red` + `Crazy`); posição = espaço + `stackOrder` |
 | Fases | `Created` … `Finished` (sem fase `in_progress`; “em andamento” de produto = pós-`Created`) |
 | Dinheiro | £ por jogador; criação com 3; válido ≥ 1 |
-| Início | `Created` válida → `RaceSetup` via `startMatch`; `currentTurnPlayerId` = `players[0].id`; não reordena; não avança rodada |
+| Início | `Created` válida → `RaceSetup` via `startMatch`; `currentTurnPlayerId` = `players[0].id`; não reordena; não avança rodada nem turno; **posiciona camelos de corrida** (embaralha 30, revela 5; RNG injetável) |
 | Turno × fase | `Created`: turno nulo; `RaceSetup` / `LegInProgress`: turno de jogador existente |
 | Encerrada | Mutações rejeitadas em `Finished` |
-| Serialização | JSON round-trip; `playerRoundIndex` ausente hidrata como `0`; `RaceSetup` sem turno é rejeitado |
+| Serialização | JSON round-trip; `playerRoundIndex` ausente hidrata como `0`; `RaceSetup` sem turno ou sem cartas de preparação é rejeitado |
+| Cartas de corrida (US-06) | `Created`: campos nulos, camelos no espaço 0. Após início: `setupRevealedRacingCards` (5, ordem) + `remainingRacingCards` (25). `Crazy` permanece no 0. Helpers de movimento internos, não exportados. |
 | Ordem base | Array `players` após o sorteio |
 | Sorteio | Default `createRandomOrdering` (Fisher–Yates, RNG injetável); `identityOrdering` para testes; só na **criação** |
-| Rodada | `getRoundPlayerSequence(players, r)` começa em `P[r mod n]`; `advancePlayerRound` incrementa `playerRoundIndex` |
+| Rodada | `getRoundPlayerSequence(players, r)` começa em `P[r mod n]` e percorre todos uma vez |
+
+### Gerenciamento de turnos (US-05)
+
+| Conceito | Situação no código |
+| --- | --- |
+| Jogador ativo | `currentTurnPlayerId` de um jogador existente (após `startMatch`) |
+| Ação de turno | Stub `performTurnAction(state, actorPlayerId)`; ator explícito |
+| Autorização | Só o jogador ativo; fases que admitem: `RaceSetup` e `LegInProgress` |
+| Avanço | Somente efeito de ação **aceita**; meio da sequência → próximo da `S`; último da `S` → incrementa `playerRoundIndex` e o primeiro da nova sequência |
+| Stub | Não altera fase, camelos (preserva posições e pool US-06), £, elenco nem ordem `players`; não encerra a partida |
+| Rejeições | `Finished` → `MATCH_FINISHED`; `Created` e demais fases → `INVALID_PHASE`; fora do turno → `NOT_CURRENT_PLAYER` |
+| Sem skip | Não há comando público que só avance turno/rodada; fora do turno **não** avança |
+| N=2 | Turno consecutivo do mesmo jogador no wrap é esperado (não é bug) |
+| Helpers | `assertPlayerMayPerformTurnAction` e `applyNextTurn` internos, não exportados |
+| Persistência | `performTurnActionAndPersist`; load restaura o ativo sem reexecutar a ação |
 
 ### Domínio de configuração (US-02)
 
@@ -170,7 +271,7 @@ UI → Command → Domain → GameState → UI
 | Dificuldade | Definida na config; preservada na partida; sem API de alteração pós-generate |
 | Isolamento | Mutar rascunho de `MatchConfig` **não** altera partida já gerada/iniciada |
 
-### Persistência de partida (US-03 + US-04)
+### Persistência de partida (US-03 + US-04 + US-05 + US-06)
 
 | Conceito | Situação no código |
 | --- | --- |
@@ -179,18 +280,18 @@ UI → Command → Domain → GameState → UI
 | Testes | `createInMemoryStorage` + mock de `Storage` |
 | Chaves | Prefixo `camel-up-card-game:`; partida `…match:{id}`; ativa `…active-match-id` |
 | Operações | `saveMatch`, `loadMatch`, `setActiveMatchId`, `getActiveMatchId`, `getActiveMatch` |
-| Orquestração | `persistCreatedMatch` (grava + ativa); `startAndPersistMatch` (`startMatch` e, se ok, persiste) |
-| Reload | Restaura estado serializado; **proibido** novo sorteio ou novo início no load |
+| Orquestração | `persistCreatedMatch` (grava + ativa); `startAndPersistMatch`; `performTurnActionAndPersist` |
+| Reload | Restaura estado serializado; **proibido** novo sorteio, novo início, nova revelação de cartas ou reexecução da ação de turno |
 
-Detalhes: `docs/spec/us-01-dominio-estado-partida/`, `docs/spec/us-02-configuracao-nova-partida/`, `docs/spec/us-03-ordem-inicial-jogadores/` e `docs/spec/us-04-fluxo-inicio-partida/` (+ plan/tasks/implementation/validation).
+Detalhes: `docs/spec/us-01-dominio-estado-partida/`, `docs/spec/us-02-configuracao-nova-partida/`, `docs/spec/us-03-ordem-inicial-jogadores/`, `docs/spec/us-04-fluxo-inicio-partida/`, `docs/spec/us-05-gerenciamento-de-turnos/` e `docs/spec/us-06-posicoes-iniciais-camelos/` (+ plan/tasks/implementation/validation).
 
 ### Roadmap (alto nível)
 
 | Fase | Foco | Situação |
 | --- | --- | --- |
-| 1 | Domínio + regras + BDD/TDD | US-01–US-04 validadas; regras de movimento/apostas/baralho ainda pendentes |
+| 1 | Domínio + regras + BDD/TDD | US-01–US-06 implementadas; mecânica de mesa do manual ainda pendente (apostas, etapa, casa 7 do Crazy, etc.) |
 | 2 | MVP mobile UI + bots + pass-and-play | Não iniciado (UI) |
-| 3 | Persistência local | Partida em `localStorage` presente; rascunho de config e wiring UI ainda não |
+| 3 | Persistência local | Partida em `localStorage` presente (inclui ativo após turno); rascunho de config e wiring UI ainda não |
 | 4–6 | Multiplayer, PWA, contas, etc. | Não iniciado |
 
 ---
@@ -201,20 +302,23 @@ Detalhes: `docs/spec/us-01-dominio-estado-partida/`, `docs/spec/us-02-configurac
 camel-up-card-game/
 ├── app/                         # Next.js App Router (template UI)
 ├── application/
-│   └── match-persistence/       # Persistência de partida (US-03, US-04)
+│   └── match-persistence/       # Persistência de partida (US-03, US-04, US-05, US-06)
 ├── domain/
-│   ├── match/                   # Domínio da partida (US-01, US-03, US-04)
+│   ├── match/                   # Domínio da partida (US-01, US-03, US-04, US-05, US-06)
 │   └── match-config/            # Configuração de nova partida (US-02)
 ├── public/
 ├── docs/
-│   ├── game/game-design.md
-│   ├── guidelines/              # 01–08
+│   ├── rules/corrida_camelo_regras.md   # Regras oficiais do jogo original
+│   ├── game/game-design.md              # Produto / UX / arquitetura desejada
+│   ├── guidelines/                      # 01–08
 │   ├── spec/
 │   │   ├── us-01-dominio-estado-partida/
 │   │   ├── us-02-configuracao-nova-partida/
 │   │   ├── us-03-ordem-inicial-jogadores/
-│   │   └── us-04-fluxo-inicio-partida/
-│   ├── plan/…                   # us-01 … us-04
+│   │   ├── us-04-fluxo-inicio-partida/
+│   │   ├── us-05-gerenciamento-de-turnos/
+│   │   └── us-06-posicoes-iniciais-camelos/
+│   ├── plan/…                   # us-01 … us-06
 │   ├── tasks/…
 │   ├── implementation/…
 │   └── validation/…
@@ -257,8 +361,12 @@ Consultar `docs/guidelines/01`–`08`.
 - Preferir `DomainResult` para rejeições explícitas.
 - Testes unitários colocalizados (`*.test.ts`) com Vitest, ambiente `node`.
 - Regras de **modo de partida** em `match-config`; regras/estado de **partida** em `match`; I/O de persistência em `application/match-persistence` — não misturar.
-- Sorteio só na **criação**; início só a partir de `Created` válida; restaurar do storage **não** reordena nem re-inicia.
+- Mecânica de mesa futura: implementar no domínio a partir de `docs/rules/` + spec da fatia; não colocar regras em componentes React.
+- Sorteio só na **criação**; início só a partir de `Created` válida; restaurar do storage **não** reordena, não re-inicia, **não** revela de novo as cartas de largada e **não** reexecuta ação de turno.
 - Não fundir generate e início num único comando de domínio (`startFromConfig` não existe).
+- Avanço de turno/rodada só via `performTurnAction` aceito; não reintroduzir skip público.
+- Ações de mesa futuras devem reutilizar autorização + avanço de turno; o stub atual não implementa regras de mesa.
+- Helpers internos de turno e de movimento de preparação não entram no barrel público.
 
 ### TypeScript / Next
 
@@ -270,7 +378,7 @@ Consultar `docs/guidelines/01`–`08`.
 
 Skills: specification → plan → tasks → implementation → validation. Detalhe do processo **não** vive neste arquivo. Artefatos em `docs/{spec,plan,tasks,implementation,validation}/<feature>/`.
 
-`game-design.md` = produto/UX/arquitetura desejada; `spec.md` = fatia implementável.
+Hierarquia ao escrever uma spec de mecânica: `docs/rules/corrida_camelo_regras.md` (jogo) → `docs/game/game-design.md` (produto/UX) → `spec.md` (fatia).
 
 ---
 
@@ -280,7 +388,7 @@ Skills: specification → plan → tasks → implementation → validation. Deta
 | --- | --- |
 | Runner | Vitest 3.2.4 (`vitest.config.ts`, env `node`) |
 | Scripts | `npm test` (`vitest run`), `npm run test:watch` |
-| Domínio + aplicação | `domain/match/*.test.ts`, `domain/match-config/*.test.ts`, `application/match-persistence/*.test.ts` (suíte validada: **82** testes, 14 arquivos) |
+| Domínio + aplicação | `domain/match/*.test.ts`, `domain/match-config/*.test.ts`, `application/match-persistence/*.test.ts` (suíte: **117** testes, 18 arquivos) |
 | UI / E2E | Ainda não configurados |
 | Diretriz | Guideline `08-testing.md`; domínio/aplicação com TDD |
 
@@ -324,7 +432,7 @@ npm run test:watch   # vitest (watch)
 1. Código + este arquivo + `docs/` são a fonte de verdade; não inventar stack ou serviços inexistentes.
 2. Domínio em `domain/**`, fora de React e de I/O de browser; UI só renderiza e despacha comandos.
 3. Configuração de nova partida → `domain/match-config`; estado/regras de partida → `domain/match`; persistência de partida → `application/match-persistence`.
-4. Antes de features de produto: `docs/game/game-design.md`, guidelines e fluxo SDD quando aplicável.
+4. Mecânica do jogo original: `docs/rules/corrida_camelo_regras.md`. Produto/UX: `docs/game/game-design.md`. Fatia: spec/plan. Não copiar o manual inteiro para o código.
 5. Mobile First / Touch First; desktop é adaptação.
 6. MVP local-first: não exigir servidor para bots/pass-and-play.
 7. Preferir Server Components; `"use client"` só com motivo concreto.
@@ -332,5 +440,8 @@ npm run test:watch   # vitest (watch)
 9. Não adicionar auth, banco, WebSocket, persistência de rascunho de config ou CI sem spec/plan.
 10. Não criar artefatos SDD a partir desta skill — use as skills correspondentes.
 11. Idioma de artefatos de processo: **pt-BR**; identificadores técnicos conforme o código.
-12. Não sortear de novo nem re-iniciar ao carregar partida persistida; não persistir rascunho de `MatchConfig`.
+12. Não sortear de novo, não re-iniciar, não revelar de novo as cartas de largada e não reexecutar ação de turno ao carregar partida persistida; não persistir rascunho de `MatchConfig`.
 13. `startMatch` só a partir de `Created` válida; gerar e iniciar são passos separados.
+14. `performTurnAction` só para o jogador ativo, com `actorPlayerId` explícito; não criar skip público; não exportar helpers internos de turno nem de movimento de preparação.
+15. Com 2 jogadores, turno consecutivo no wrap da rodada é comportamento esperado.
+16. Não alterar `MIN_MONEY` nem posicionar o camelo doido na casa 7 sem uma spec que peça essa mudança. Posições iniciais dos camelos de corrida seguem a US-06 (não reverter para “todos no espaço 0” após o início).
