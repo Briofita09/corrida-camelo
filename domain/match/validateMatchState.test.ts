@@ -113,5 +113,63 @@ describe("validateMatchState", () => {
     );
     expect(validateMatchState({ ...started, camels }).ok).toBe(true);
   });
+
+  it("aceita RaceSetup legado com Crazy ainda no espaço 0", () => {
+    const started = buildValidStartedMatch();
+    const usedAtStart = new Set(
+      started.camels
+        .filter((c) => c.space === 0)
+        .map((c) => c.stackOrder),
+    );
+    const freeStack = [0, 1, 2, 3, 4, 5].find((n) => !usedAtStart.has(n)) ?? 6;
+    const camels = started.camels.map((c) =>
+      c.id === "Crazy" ? { ...c, space: 0, stackOrder: freeStack } : c,
+    );
+    expect(validateMatchState({ ...started, camels }).ok).toBe(true);
+  });
+
+  it("aceita RaceSetup com Crazy noutro espaço válido (não exige 7)", () => {
+    const started = buildValidStartedMatch();
+    const usedAtFive = new Set(
+      started.camels
+        .filter((c) => c.space === 5)
+        .map((c) => c.stackOrder),
+    );
+    const freeStack = [0, 1, 2, 3, 4, 5].find((n) => !usedAtFive.has(n)) ?? 6;
+    const camels = started.camels.map((c) =>
+      c.id === "Crazy" ? { ...c, space: 5, stackOrder: freeStack } : c,
+    );
+    expect(validateMatchState({ ...started, camels }).ok).toBe(true);
+  });
+
+  it("rejeita Crazy com sentido TowardFinish", () => {
+    const started = buildValidStartedMatch();
+    const camels = started.camels.map((c) =>
+      c.id === "Crazy" ? { ...c, direction: "TowardFinish" as const } : c,
+    );
+    const result = validateMatchState({ ...started, camels });
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.code).toBe("INVALID_DIRECTION");
+  });
+
+  it("rejeita Created com camelo fora do espaço 0", () => {
+    const created = buildValidCreatedMatch();
+    const camels = created.camels.map((c) =>
+      c.id === "Yellow" ? { ...c, space: 1 } : c,
+    );
+    const result = validateMatchState({ ...created, camels });
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.code).toBe("CAMELS_NOT_AT_START");
+  });
+
+  it("rejeita camelo de corrida com sentido TowardStart", () => {
+    const started = buildValidStartedMatch();
+    const camels = started.camels.map((c) =>
+      c.id === "Yellow" ? { ...c, direction: "TowardStart" as const } : c,
+    );
+    const result = validateMatchState({ ...started, camels });
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.code).toBe("INVALID_DIRECTION");
+  });
 });
 

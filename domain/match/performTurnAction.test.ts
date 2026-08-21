@@ -1,11 +1,12 @@
 import { describe, expect, it } from "vitest";
 import * as matchApi from "./index";
+import { CRAZY_INITIAL_SPACE } from "./constants";
 import { createMatch } from "./createMatch";
 import { identityOrdering } from "./playerOrdering";
 import { performTurnAction } from "./performTurnAction";
 import { startMatch } from "./startMatch";
 import { buildValidFinishedMatch } from "./testHelpers";
-import type { MatchState } from "./types";
+import type { MatchState, RacingCard } from "./types";
 
 function orderedCreatedMatch(
   playerIds: string[] = ["A", "B", "C"],
@@ -58,6 +59,32 @@ describe("performTurnAction", () => {
     );
     expect(started).toEqual(snapshot);
     expect(started.currentTurnPlayerId).toBe("A");
+  });
+
+  it("stub preserva Crazy no espaço 7 e TowardStart após o início", () => {
+    const revealed: RacingCard[] = [
+      { camelId: "Yellow", value: 1 },
+      { camelId: "Green", value: 2 },
+      { camelId: "Blue", value: 1 },
+      { camelId: "Purple", value: 1 },
+      { camelId: "Yellow", value: 1 },
+    ];
+    const started = startMatch(orderedCreatedMatch(["A", "B", "C"]), {
+      revealedRacingCards: revealed,
+    });
+    if (!started.ok) throw new Error("start failed");
+    const crazyBefore = started.value.camels.find((c) => c.id === "Crazy");
+    expect(crazyBefore?.space).toBe(CRAZY_INITIAL_SPACE);
+    expect(crazyBefore?.direction).toBe("TowardStart");
+
+    const result = performTurnAction(started.value, "A");
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    expect(result.value.camels).toEqual(started.value.camels);
+    const crazyAfter = result.value.camels.find((c) => c.id === "Crazy");
+    expect(crazyAfter?.space).toBe(CRAZY_INITIAL_SPACE);
+    expect(crazyAfter?.direction).toBe("TowardStart");
   });
 
   it("rejeita ação de quem não é o jogador ativo", () => {

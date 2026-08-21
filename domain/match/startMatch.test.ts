@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { CRAZY_INITIAL_SPACE, RACING_CAMEL_IDS } from "./constants";
 import { createMatch } from "./createMatch";
 import { identityOrdering } from "./playerOrdering";
 import {
@@ -77,7 +78,19 @@ describe("startMatch", () => {
     expect(camel(result.value, "Blue").space).toBe(2);
     expect(camel(result.value, "Purple").space).toBe(2);
     expect(camel(result.value, "Red").space).toBe(0);
-    expect(camel(result.value, "Crazy").space).toBe(0);
+
+    const crazy = camel(result.value, "Crazy");
+    expect(crazy.space).toBe(CRAZY_INITIAL_SPACE);
+    expect(crazy.direction).toBe("TowardStart");
+    expect(crazy.space).not.toBe(0);
+    expect(
+      result.value.camels.filter((c) => c.space === CRAZY_INITIAL_SPACE),
+    ).toHaveLength(1);
+    for (const racingId of RACING_CAMEL_IDS) {
+      const racing = camel(result.value, racingId);
+      expect(racing.direction).toBe("TowardFinish");
+      expect(racing.space).not.toBe(CRAZY_INITIAL_SPACE);
+    }
 
     expect(created).toEqual(snapshot);
     expect(created.phase).toBe("Created");
@@ -115,7 +128,8 @@ describe("startMatch", () => {
     if (!result.ok) return;
     expect(camel(result.value, "Yellow").space).toBe(5);
     expect(camel(result.value, "Red").space).toBe(0);
-    expect(camel(result.value, "Crazy").space).toBe(0);
+    expect(camel(result.value, "Crazy").space).toBe(CRAZY_INITIAL_SPACE);
+    expect(camel(result.value, "Crazy").direction).toBe("TowardStart");
     expect(result.value.setupRevealedRacingCards).toEqual([
       { camelId: "Yellow", value: 1 },
       { camelId: "Yellow", value: 1 },
@@ -134,6 +148,8 @@ describe("startMatch", () => {
     expect(four.ok).toBe(false);
     if (!four.ok) expect(four.error.code).toBe("INVALID_REVEAL_COUNT");
     expect(created).toEqual(snapshot);
+    expect(camel(created, "Crazy").space).toBe(0);
+    expect(camel(created, "Crazy").direction).toBe("TowardStart");
 
     const six = startMatch(created, {
       revealedRacingCards: [...CONTROLLED_SEQUENCE, { camelId: "Red", value: 1 }],
@@ -141,6 +157,8 @@ describe("startMatch", () => {
     expect(six.ok).toBe(false);
     if (!six.ok) expect(six.error.code).toBe("INVALID_REVEAL_COUNT");
     expect(created).toEqual(snapshot);
+    expect(camel(created, "Crazy").space).toBe(0);
+    expect(camel(created, "Crazy").direction).toBe("TowardStart");
   });
 
   it("rejeita carta com valor ou cor inválidos", () => {
@@ -171,6 +189,8 @@ describe("startMatch", () => {
     if (!crazy.ok) expect(crazy.error.code).toBe("INVALID_RACING_CARD");
     expect(created).toEqual(snapshot);
     expect(created.camels.every((c) => c.space === 0)).toBe(true);
+    expect(camel(created, "Crazy").space).toBe(0);
+    expect(camel(created, "Crazy").direction).toBe("TowardStart");
   });
 
   it("rejeita camelos de corrida fora da largada", () => {
@@ -186,16 +206,21 @@ describe("startMatch", () => {
     if (!result.ok) expect(result.error.code).toBe("CAMELS_NOT_AT_START");
   });
 
-  it("rejeita iniciar partida já iniciada e preserva posições e pool", () => {
+  it("rejeita iniciar partida já iniciada e preserva Crazy no espaço 7", () => {
     const started = startMatch(orderedCreatedMatch(), {
       revealedRacingCards: CONTROLLED_SEQUENCE,
     });
     if (!started.ok) throw new Error("start failed");
+    expect(camel(started.value, "Crazy").space).toBe(CRAZY_INITIAL_SPACE);
+    expect(camel(started.value, "Crazy").direction).toBe("TowardStart");
     const snapshot = structuredClone(started.value);
     const again = startMatch(started.value);
     expect(again.ok).toBe(false);
+    if (!again.ok) expect(again.error.code).toBe("INVALID_PHASE");
     expect(started.value).toEqual(snapshot);
     expect(started.value.setupRevealedRacingCards).toEqual(CONTROLLED_SEQUENCE);
+    expect(camel(started.value, "Crazy").space).toBe(CRAZY_INITIAL_SPACE);
+    expect(camel(started.value, "Crazy").direction).toBe("TowardStart");
   });
 
   it("rejeita iniciar partida já em andamento (LegInProgress)", () => {
@@ -240,5 +265,54 @@ describe("startMatch", () => {
     const result = startMatch(finished);
     expect(result.ok).toBe(false);
     expect(finished).toEqual(snapshot);
+  });
+
+  it("nenhum camelo tem dono; Crazy não é camelo de corrida e está desclassificado por identidade", () => {
+    const created = orderedCreatedMatch();
+    const started = startMatch(created, {
+      revealedRacingCards: CONTROLLED_SEQUENCE,
+    });
+    expect(started.ok).toBe(true);
+    if (!started.ok) return;
+
+    const crazies = started.value.camels.filter((c) => c.id === "Crazy");
+    expect(crazies).toHaveLength(1);
+    expect((RACING_CAMEL_IDS as readonly string[]).includes("Crazy")).toBe(
+      false,
+    );
+
+    for (const camelState of started.value.camels) {
+      expect(Object.keys(camelState).sort()).toEqual([
+        "direction",
+        "id",
+        "space",
+        "stackOrder",
+      ]);
+      expect(camelState).not.toHaveProperty("owner");
+      expect(camelState).not.toHaveProperty("playerId");
+      expect(camelState).not.toHaveProperty("disqualified");
+    }
+
+    const crazy = crazies[0]!;
+    expect(crazy.id).toBe("Crazy");
+  });
+
+  it("o sentido do doido é sempre o contrário dos de corrida na Created e após o início", () => {
+    const created = orderedCreatedMatch();
+    expect(camel(created, "Crazy").direction).toBe("TowardStart");
+    for (const racingId of RACING_CAMEL_IDS) {
+      expect(camel(created, racingId).direction).toBe("TowardFinish");
+    }
+
+    const started = startMatch(created, {
+      revealedRacingCards: CONTROLLED_SEQUENCE,
+    });
+    expect(started.ok).toBe(true);
+    if (!started.ok) return;
+
+    expect(camel(started.value, "Crazy").direction).toBe("TowardStart");
+    for (const racingId of RACING_CAMEL_IDS) {
+      expect(camel(started.value, racingId).direction).toBe("TowardFinish");
+    }
   });
 });

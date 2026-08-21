@@ -184,6 +184,13 @@ function validateCamels(camels: unknown): DomainResult<CamelState[]> {
       );
     }
 
+    if (camel.id !== "Crazy" && camel.direction !== "TowardFinish") {
+      return err(
+        "INVALID_DIRECTION",
+        "Camelos de corrida devem ter direção TowardFinish.",
+      );
+    }
+
     normalized.push({
       id: camel.id,
       space: camel.space,

@@ -6,6 +6,7 @@ import {
   resolveSetupRacingCards,
 } from "./racingCards";
 import { determineInitialCamelPositions } from "./determineInitialCamelPositions";
+import { placeCrazyCamel } from "./placeCrazyCamel";
 import type {
   DomainResult,
   MatchState,
@@ -52,10 +53,11 @@ export function startMatch(
   const cards = resolveSetupRacingCards(options);
   if (!cards.ok) return cards;
 
-  const camels = determineInitialCamelPositions(
+  const racingCamels = determineInitialCamelPositions(
     valid.value.camels,
     cards.value.revealed,
   );
+  const camels = placeCrazyCamel(racingCamels);
 
   return ok({
     ...valid.value,

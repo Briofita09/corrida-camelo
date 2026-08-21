@@ -45,6 +45,9 @@ describe("serialize / deserialize", () => {
     expect(deserialized.value.currentTurnPlayerId).toBe(
       started.value.currentTurnPlayerId,
     );
+    const crazy = deserialized.value.camels.find((c) => c.id === "Crazy");
+    expect(crazy?.space).toBe(7);
+    expect(crazy?.direction).toBe("TowardStart");
   });
 
   it("rejeita desserializar RaceSetup sem cartas de preparação", () => {

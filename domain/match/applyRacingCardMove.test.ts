@@ -107,4 +107,70 @@ describe("applyRacingCardMove", () => {
     applyRacingCardMove(origin, { camelId: "Yellow", value: 1 });
     expect(origin).toEqual(snapshot);
   });
+
+  // Caracterização US-07 / RF-09: Crazy participa da mesma regra de pilha.
+  // Isto NÃO é o movimento oficial do doido (cartas pretas / TowardStart / +1).
+  describe("Crazy na mesma regra de pilha (caracterização; sem movimento do doido)", () => {
+    function mounted(positions: Partial<Record<CamelState["id"], { space: number; stackOrder: number }>>): CamelState[] {
+      return CAMEL_IDS.map((id, index) => ({
+        id,
+        space: positions[id]?.space ?? START_SPACE,
+        stackOrder: positions[id]?.stackOrder ?? index,
+        direction: id === "Crazy" ? "TowardStart" : "TowardFinish",
+      }));
+    }
+
+    it("quem chega sobe: Crazy sozinho no destino fica por baixo", () => {
+      const camels = mounted({
+        Crazy: { space: 3, stackOrder: 0 },
+        Yellow: { space: 2, stackOrder: 0 },
+      });
+
+      const after = applyRacingCardMove(camels, {
+        camelId: "Yellow",
+        value: 1,
+      });
+
+      expect(camel(after, "Yellow").space).toBe(3);
+      expect(camel(after, "Crazy").space).toBe(3);
+      expect(stackOnSpace(after, 3)).toEqual(["Crazy", "Yellow"]);
+      expect(camel(after, "Crazy").direction).toBe("TowardStart");
+    });
+
+    it("Crazy por cima é levado rumo à chegada quando o de corrida de baixo se move", () => {
+      const camels = mounted({
+        Yellow: { space: 2, stackOrder: 0 },
+        Crazy: { space: 2, stackOrder: 1 },
+      });
+
+      const after = applyRacingCardMove(camels, {
+        camelId: "Yellow",
+        value: 1,
+      });
+
+      expect(camel(after, "Yellow").space).toBe(3);
+      expect(camel(after, "Crazy").space).toBe(3);
+      expect(stackOnSpace(after, 3)).toEqual(["Yellow", "Crazy"]);
+      expect(camel(after, "Crazy").direction).toBe("TowardStart");
+    });
+
+    it("Crazy no meio da pilha é levado junto com o de cima quando o de baixo se move", () => {
+      const camels = mounted({
+        Yellow: { space: 2, stackOrder: 0 },
+        Crazy: { space: 2, stackOrder: 1 },
+        Green: { space: 2, stackOrder: 2 },
+      });
+
+      const after = applyRacingCardMove(camels, {
+        camelId: "Yellow",
+        value: 1,
+      });
+
+      expect(camel(after, "Yellow").space).toBe(3);
+      expect(camel(after, "Crazy").space).toBe(3);
+      expect(camel(after, "Green").space).toBe(3);
+      expect(stackOnSpace(after, 3)).toEqual(["Yellow", "Crazy", "Green"]);
+      expect(camel(after, "Crazy").direction).toBe("TowardStart");
+    });
+  });
 });
