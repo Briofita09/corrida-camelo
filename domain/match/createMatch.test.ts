@@ -117,4 +117,18 @@ describe("createMatch — caminho feliz", () => {
     expect(state.currentLeg).toBe(0);
     expect(state.playerRoundIndex).toBe(0);
   });
+
+  it("na Created o camelo doido permanece na largada no sentido contrário", () => {
+    const result = createMatch({
+      id: "match-crazy-created",
+      players: [human("h1", "Felipe"), bot("b1", "Easy")],
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    const crazy = result.value.camels.find((c) => c.id === "Crazy");
+    expect(crazy).toBeDefined();
+    expect(crazy?.space).toBe(0);
+    expect(crazy?.direction).toBe("TowardStart");
+  });
 });

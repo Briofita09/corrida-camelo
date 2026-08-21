@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  CRAZY_INITIAL_SPACE,
   createMatch,
   identityOrdering,
   identityRacingCardOrdering,
@@ -80,6 +81,12 @@ describe("startAndPersistMatch", () => {
     expect(loaded.ok).toBe(true);
     if (!loaded.ok) return;
     expect(loaded.value).toEqual(first.value);
+    expect(loaded.value.camels.find((c) => c.id === "Crazy")?.space).toBe(
+      CRAZY_INITIAL_SPACE,
+    );
+    expect(loaded.value.camels.find((c) => c.id === "Crazy")?.direction).toBe(
+      "TowardStart",
+    );
   });
 
   it("sem partida ativa, getActiveMatch rejeita", () => {
@@ -114,6 +121,21 @@ describe("startAndPersistMatch", () => {
     expect(loaded.value.remainingRacingCards).toHaveLength(25);
     expect(loaded.value.camels).toEqual(started.value.camels);
     expect(loaded.value).toEqual(started.value);
+
+    const crazy = loaded.value.camels.find((c) => c.id === "Crazy");
+    expect(crazy?.space).toBe(CRAZY_INITIAL_SPACE);
+    expect(crazy?.direction).toBe("TowardStart");
+
+    const byId = persistence.loadMatch(created.id);
+    expect(byId.ok).toBe(true);
+    if (!byId.ok) return;
+    expect(byId.value.camels).toEqual(started.value.camels);
+    expect(byId.value.camels.find((c) => c.id === "Crazy")?.space).toBe(
+      CRAZY_INITIAL_SPACE,
+    );
+    expect(byId.value.camels.find((c) => c.id === "Crazy")?.direction).toBe(
+      "TowardStart",
+    );
   });
 
   it("não grava iniciado quando a sequência de cartas é inválida", () => {
@@ -132,6 +154,10 @@ describe("startAndPersistMatch", () => {
     if (!active.ok) return;
     expect(active.value.phase).toBe("Created");
     expect(active.value.setupRevealedRacingCards).toBeNull();
+    expect(active.value.camels.find((c) => c.id === "Crazy")?.space).toBe(0);
+    expect(active.value.camels.find((c) => c.id === "Crazy")?.direction).toBe(
+      "TowardStart",
+    );
   });
 
   it("identity shuffle persistido não é reembaralhado no load", () => {

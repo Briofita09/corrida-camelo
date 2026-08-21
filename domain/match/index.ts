@@ -40,6 +40,7 @@ export {
   type StartMatchOptions,
 } from "./types";
 export {
+  CRAZY_INITIAL_SPACE,
   INITIAL_MONEY,
   INITIAL_SETUP_REVEAL_COUNT,
   MAX_PLAYERS,
